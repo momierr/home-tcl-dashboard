@@ -1,4 +1,10 @@
-from home_tcl_dashboard.network import Platform, parse_desserte, parse_platform
+from home_tcl_dashboard.network import (
+    Line,
+    Platform,
+    parse_desserte,
+    parse_lines,
+    parse_platform,
+)
 
 
 def test_parse_desserte_single_line():
@@ -17,5 +23,54 @@ def test_parse_platform():
     assert parse_platform(
         {"id": "32103", "nom": "Perrache", "desserte": "T1:A,T2:A"}
     ) == Platform(
-        id="32103", name="Perrache", line_directions=parse_desserte("T1:A,T2:A")
+        id="32103", name="Perrache", line_directions={("T1", "A"), ("T2", "A")}
     )
+
+
+def test_parse_lines_groups_both_directions():
+    rows = [
+        {
+            "code_ligne": "A",
+            "sens": "Aller",
+            "nom_destination": "Vaulx-en-Velin La Soie",
+            "famille_transport": "MET",
+            "couleur_hex": "#E8308A",
+        },
+        {
+            "code_ligne": "A",
+            "sens": "Retour",
+            "nom_destination": "Perrache",
+            "famille_transport": "MET",
+            "couleur_hex": "#E8308A",
+        },
+    ]
+
+    assert parse_lines(rows) == {
+        "A": Line(
+            code="A",
+            mode="MET",
+            colour="#E8308A",
+            destinations={"A": "Vaulx-en-Velin La Soie", "R": "Perrache"},
+        )
+    }
+
+
+def test_parse_lines_keeps_first_trace_of_a_direction():
+    rows = [
+        {
+            "code_ligne": "43",
+            "sens": "Aller",
+            "nom_destination": "First",
+            "famille_transport": "BUS",
+            "couleur_hex": "#000000",
+        },
+        {
+            "code_ligne": "43",
+            "sens": "Aller",
+            "nom_destination": "Second",
+            "famille_transport": "BUS",
+            "couleur_hex": "#000000",
+        },
+    ]
+
+    assert parse_lines(rows)["43"].destinations == {"A": "First"}
