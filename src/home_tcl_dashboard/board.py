@@ -56,6 +56,9 @@ class Banner:
 class Board:
     cards: list[Card]
     banner: Banner | None
+    now: datetime
+    updated_at: datetime | None
+    stale: bool
 
 
 def build_banner(favourites: list[Favourite], alerts: list[Alert]) -> Banner | None:

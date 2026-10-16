@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import requests
 from fastapi.testclient import TestClient
 
 from home_tcl_dashboard import app as app_module
@@ -117,7 +118,10 @@ def test_board_returns_one_card_per_favourite(monkeypatch):
         response = client.get("/api/board")
 
     assert response.status_code == 200
-    assert response.json() == {
+    body = response.json()
+    assert body.pop("stale") is False
+    assert body.pop("updated_at") == body.pop("now")  # fresh: fetched right now
+    assert body == {
         "cards": [
             {
                 "line": "T2",
@@ -186,3 +190,34 @@ def test_board_uses_the_timetable_for_the_metro(monkeypatch):
             "realtime": False,
         }
     ]
+
+
+def test_board_serves_stale_data_when_grand_lyon_is_down(monkeypatch):
+    calls = []
+
+    def flaky_fetch_passages(platform_ids, auth):
+        calls.append(platform_ids)
+        if len(calls) > 1:
+            raise requests.ConnectionError()
+        return FAKE_PASSAGES
+
+    def down(auth):
+        raise requests.ConnectionError()
+
+    monkeypatch.setattr(
+        app_module, "load_network", lambda: (FAKE_PLATFORMS, FAKE_LINES)
+    )
+    monkeypatch.setattr(app_module, "load_scheduled_departures", lambda lines: [])
+    monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
+    monkeypatch.setattr(app_module, "fetch_passages", flaky_fetch_passages)
+    monkeypatch.setattr(app_module, "fetch_alerts", down)
+
+    with TestClient(app) as client:
+        client.get("/api/board")  # Grand Lyon answers: passages are cached
+        response = client.get("/api/board")  # Grand Lyon is down
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["stale"] is True
+    assert body["updated_at"] is None  # alerts never succeeded
+    assert [len(card["departures"]) for card in body["cards"]] == [1, 1]

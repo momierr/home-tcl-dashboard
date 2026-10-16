@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request
 
 from home_tcl_dashboard.alerts import active_alerts, parse_alert
 from home_tcl_dashboard.board import Board, Favourite, build_banner, build_card
+from home_tcl_dashboard.cache import LastGood
 from home_tcl_dashboard.grandlyon import (
     download_gtfs,
     fetch_alerts,
@@ -56,6 +57,8 @@ def load_scheduled_departures(lines: dict[str, Line]) -> list[Departure]:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.platforms, app.state.lines = load_network()
     app.state.scheduled = load_scheduled_departures(app.state.lines)
+    app.state.passages = LastGood()
+    app.state.alerts = LastGood()
     yield
 
 
@@ -78,15 +81,34 @@ def board(request: Request) -> Board:
         if lines[favourite.line].mode not in SCHEDULED_MODES
     ]
 
-    if realtime_ids:
-        passages = latest_estimates(fetch_passages(realtime_ids, get_auth()))
-        departures.extend(parse_departure(passage) for passage in passages)
-
     now = datetime.now()
-    alerts = active_alerts([parse_alert(row) for row in fetch_alerts(get_auth())], now)
+
+    passages_stale = False
+
+    if realtime_ids:
+        passages_stale = request.app.state.passages.refresh(
+            lambda: fetch_passages(realtime_ids, get_auth()), now
+        )
+    passages = latest_estimates(request.app.state.passages.rows)
+
+    departures.extend(parse_departure(passage) for passage in passages)
+
+    alerts_stale = request.app.state.alerts.refresh(
+        lambda: fetch_alerts(get_auth()), now
+    )
+    alerts = active_alerts(
+        [parse_alert(row) for row in request.app.state.alerts.rows], now
+    )
+
     platforms = request.app.state.platforms
     cards = [
         build_card(favourite, platforms, lines, departures, alerts, now)
         for favourite in FAVOURITES
     ]
-    return Board(cards=cards, banner=build_banner(FAVOURITES, alerts))
+    return Board(
+        cards=cards,
+        banner=build_banner(FAVOURITES, alerts),
+        now=now,
+        updated_at=request.app.state.alerts.fetched_at,
+        stale=passages_stale or alerts_stale,
+    )
