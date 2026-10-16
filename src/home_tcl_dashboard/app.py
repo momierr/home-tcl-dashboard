@@ -113,6 +113,12 @@ class LineSummary:
     destinations: dict[str, str]
 
 
+@dataclass
+class StopSummary:
+    platform: str
+    name: str
+
+
 @app.get("/api/lines")
 def get_lines(
     mode: Literal["metro", "tram", "bus"], request: Request
@@ -121,6 +127,21 @@ def get_lines(
     return [
         LineSummary(code=line.code, colour=line.colour, destinations=line.destinations)
         for line in lines_of_mode(request.app.state.lines, mode)
+    ]
+
+
+@app.get("/api/lines/{code}/{sens}/stops")
+def get_stops(
+    code: str, sens: Literal["A", "R"], request: Request
+) -> list[StopSummary]:
+    """The stops of one direction of a line, in travel order."""
+    lines = request.app.state.lines
+    if code not in lines or sens not in lines[code].stops:
+        raise HTTPException(status_code=404, detail=f"unknown line {code} sens {sens}")
+    platforms = request.app.state.platforms
+    return [
+        StopSummary(platform=platform_id, name=platforms[platform_id].name)
+        for platform_id in lines[code].stops[sens]
     ]
 
 

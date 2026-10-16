@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import pytest
 import requests
 from fastapi.testclient import TestClient
 
@@ -315,3 +316,39 @@ def test_get_lines_refuses_an_unknown_mode(monkeypatch, tmp_path):
         response = client.get("/api/lines", params={"mode": "plane"})
 
     assert response.status_code == 422
+
+
+def test_get_stops_lists_a_direction_in_travel_order(monkeypatch, tmp_path):
+    lines = {
+        "T2": Line("T2", "TRA", "#6BA230", stops={"A": ["33685", "32103"]}),
+    }
+    start_without_network(monkeypatch, tmp_path / "favourites.json")
+    monkeypatch.setattr(app_module, "load_network", lambda: (FAKE_PLATFORMS, lines))
+
+    with TestClient(app) as client:
+        response = client.get("/api/lines/T2/A/stops")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {"platform": "33685", "name": "Bellecour A. Poncet"},
+        {"platform": "32103", "name": "Perrache"},
+    ]
+
+
+@pytest.mark.parametrize(
+    "url, status",
+    [
+        ("/api/lines/ZZZ/A/stops", 404),  # unknown line
+        ("/api/lines/T2/R/stops", 404),  # one-way line: no stops that way
+        ("/api/lines/T2/X/stops", 422),  # not a sens at all
+    ],
+)
+def test_get_stops_refuses_unknown_directions(monkeypatch, tmp_path, url, status):
+    lines = {"T2": Line("T2", "TRA", "#6BA230", stops={"A": ["32103"]})}
+    start_without_network(monkeypatch, tmp_path / "favourites.json")
+    monkeypatch.setattr(app_module, "load_network", lambda: (FAKE_PLATFORMS, lines))
+
+    with TestClient(app) as client:
+        response = client.get(url)
+
+    assert response.status_code == status
