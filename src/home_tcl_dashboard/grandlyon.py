@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Self
 
 import requests
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 
 WFS_URL = "https://data.grandlyon.com/geoserver/sytral/ows"
 GTFS_URL = "https://download.data.grandlyon.com/files/rdata/tcl_sytral.tcltheorique/GTFS_TCL.ZIP"
@@ -30,7 +30,9 @@ class GrandLyon:
 
     @classmethod
     def from_env(cls) -> Self:
-        load_dotenv()
+        # usecwd: look for .env from where the command runs, not from this file
+        # (which sits in site-packages once installed with pip)
+        load_dotenv(find_dotenv(usecwd=True))
         return cls(os.environ["GDL_USER"], os.environ["GDL_PWD"])
 
     def fetch_wfs(

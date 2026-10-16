@@ -2,6 +2,7 @@
 What the screens show is tested on Dashboard itself, in test_dashboard.py."""
 
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 from fakes import FAKE_LINES, FakeGrandLyon, make_dashboard
@@ -176,3 +177,15 @@ def test_the_alerts_page_as_json(http):
 
     assert body.pop("updated_at")
     assert body == {"mine": [], "network": [], "stale": False}
+
+
+def test_data_dir_is_data_by_default(monkeypatch):
+    monkeypatch.delenv("TCL_DATA_DIR", raising=False)
+
+    assert app_module.data_dir() == Path("data")
+
+
+def test_data_dir_can_be_set_by_the_environment(monkeypatch, tmp_path):
+    monkeypatch.setenv("TCL_DATA_DIR", str(tmp_path))
+
+    assert app_module.data_dir() == tmp_path
