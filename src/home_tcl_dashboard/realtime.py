@@ -32,3 +32,14 @@ def parse_departure(passage: dict[str, Any]) -> Departure:
         time=datetime.fromisoformat(passage["heurepassage"]),
         realtime=passage["type"] == "E",
     )
+
+
+def next_departures(
+    departures: list[Departure], line: str, now: datetime, n: int = 3
+) -> list[Departure]:
+    upcoming = [
+        departure
+        for departure in departures
+        if departure.line == line and departure.time >= now
+    ]
+    return sorted(upcoming, key=lambda departure: departure.time)[:n]
