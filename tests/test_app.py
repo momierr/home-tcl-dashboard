@@ -268,3 +268,20 @@ def test_put_favourites_saves_them_and_serves_them(monkeypatch, tmp_path):
         Favourite(line="C9", sens="A", platform="33685"),
         Favourite(line="T2", sens="A", platform="32103"),
     ]
+
+
+def test_put_favourites_refuses_invalid_ones_and_keeps_the_old(monkeypatch, tmp_path):
+    path = tmp_path / "favourites.json"
+    start_without_network(monkeypatch, path)
+    old = [{"line": "T2", "sens": "A", "platform": "32103"}]
+    invalid = [{"line": "ZZZ", "sens": "A", "platform": "32103"}]
+
+    with TestClient(app) as client:
+        client.put("/api/favourites", json=old)
+        put = client.put("/api/favourites", json=invalid)
+        get = client.get("/api/favourites")
+
+    assert put.status_code == 422
+    assert put.json() == {"detail": ["unknown line ZZZ"]}
+    assert get.json() == old
+    assert load_favourites(path) == [Favourite(line="T2", sens="A", platform="32103")]

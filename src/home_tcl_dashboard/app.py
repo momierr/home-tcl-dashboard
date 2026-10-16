@@ -3,12 +3,16 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 
 from home_tcl_dashboard.alerts import active_alerts, parse_alert
 from home_tcl_dashboard.board import Board, Favourite, build_banner, build_card
 from home_tcl_dashboard.cache import LastGood
-from home_tcl_dashboard.favourites import load_favourites, save_favourites
+from home_tcl_dashboard.favourites import (
+    favourite_errors,
+    load_favourites,
+    save_favourites,
+)
 from home_tcl_dashboard.grandlyon import (
     download_gtfs,
     fetch_alerts,
@@ -76,6 +80,11 @@ def get_favourites(request: Request) -> list[Favourite]:
 
 @app.put("/api/favourites")
 def put_favourites(favourites: list[Favourite], request: Request) -> list[Favourite]:
+    errors = favourite_errors(
+        favourites, request.app.state.platforms, request.app.state.lines
+    )
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
     save_favourites(FAV_PATH, favourites)
     request.app.state.favourites = favourites
     return favourites
