@@ -6,8 +6,9 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 
 from home_tcl_dashboard.alerts import active_alerts, parse_alert
-from home_tcl_dashboard.board import Board, Favourite, build_banner, build_card
+from home_tcl_dashboard.board import Board, build_banner, build_card
 from home_tcl_dashboard.cache import LastGood
+from home_tcl_dashboard.favourites import load_favourites
 from home_tcl_dashboard.grandlyon import (
     download_gtfs,
     fetch_alerts,
@@ -24,12 +25,9 @@ LINE_PROPERTIES = "code_ligne,sens,nom_destination,famille_transport,couleur_hex
 REGULAR_TRACES = "type_trace='NOM' AND code_type_ligne='REG'"
 SCHEDULED_MODES = {"MET", "FUN"}
 
-FAVOURITES = [
-    Favourite(line="T2", sens="A", platform="32103"),  # Perrache
-    Favourite(line="C9", sens="A", platform="33685"),  # Bellecour A. Poncet
-]
 
 GTFS_PATH = Path("data/GTFS_TCL.ZIP")
+FAV_PATH = Path("data/favourites.json")
 
 
 def load_network() -> tuple[dict[str, Platform], dict[str, Line]]:
@@ -59,6 +57,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.scheduled = load_scheduled_departures(app.state.lines)
     app.state.passages = LastGood()
     app.state.alerts = LastGood()
+    app.state.favourites = load_favourites(FAV_PATH)
     yield
 
 
@@ -77,7 +76,7 @@ def board(request: Request) -> Board:
     departures = list(request.app.state.scheduled)
     realtime_ids = [
         favourite.platform
-        for favourite in FAVOURITES
+        for favourite in request.app.state.favourites
         if lines[favourite.line].mode not in SCHEDULED_MODES
     ]
 
@@ -103,11 +102,11 @@ def board(request: Request) -> Board:
     platforms = request.app.state.platforms
     cards = [
         build_card(favourite, platforms, lines, departures, alerts, now)
-        for favourite in FAVOURITES
+        for favourite in request.app.state.favourites
     ]
     return Board(
         cards=cards,
-        banner=build_banner(FAVOURITES, alerts),
+        banner=build_banner(request.app.state.favourites, alerts),
         now=now,
         updated_at=request.app.state.alerts.fetched_at,
         stale=passages_stale or alerts_stale,

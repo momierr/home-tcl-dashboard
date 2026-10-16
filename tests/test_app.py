@@ -79,6 +79,10 @@ FAKE_LINES = {
     "C9": Line("C9", "BUS", "#C88817", {"A": "Hopitaux Est"}),
 }
 
+FAKE_FAVOURITES = [
+    Favourite(line="T2", sens="A", platform="32103"),
+    Favourite(line="C9", sens="A", platform="33685"),
+]
 FAKE_PASSAGES = [
     {
         "id": "32103",
@@ -110,6 +114,7 @@ def test_board_returns_one_card_per_favourite(monkeypatch):
         app_module, "load_network", lambda: (FAKE_PLATFORMS, FAKE_LINES)
     )
     monkeypatch.setattr(app_module, "load_scheduled_departures", lambda lines: [])
+    monkeypatch.setattr(app_module, "load_favourites", lambda path: FAKE_FAVOURITES)
     monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
     monkeypatch.setattr(app_module, "fetch_passages", fake_fetch_passages)
     monkeypatch.setattr(app_module, "fetch_alerts", lambda auth: [])
@@ -168,7 +173,9 @@ def test_board_uses_the_timetable_for_the_metro(monkeypatch):
         raise AssertionError("the metro must not ask for real-time data")
 
     monkeypatch.setattr(
-        app_module, "FAVOURITES", [Favourite(line="A", sens="A", platform="30101")]
+        app_module,
+        "load_favourites",
+        lambda path: [Favourite(line="A", sens="A", platform="30101")],
     )
     monkeypatch.setattr(app_module, "load_network", lambda: (platforms, lines))
     monkeypatch.setattr(
@@ -208,6 +215,7 @@ def test_board_serves_stale_data_when_grand_lyon_is_down(monkeypatch):
         app_module, "load_network", lambda: (FAKE_PLATFORMS, FAKE_LINES)
     )
     monkeypatch.setattr(app_module, "load_scheduled_departures", lambda lines: [])
+    monkeypatch.setattr(app_module, "load_favourites", lambda path: FAKE_FAVOURITES)
     monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
     monkeypatch.setattr(app_module, "fetch_passages", flaky_fetch_passages)
     monkeypatch.setattr(app_module, "fetch_alerts", down)
