@@ -1,6 +1,7 @@
+from datetime import datetime
 from typing import Any
 
-from home_tcl_dashboard.realtime import latest_estimates
+from home_tcl_dashboard.realtime import Departure, latest_estimates, parse_departure
 
 
 def dummy_passage(**fields: Any) -> dict[str, Any]:
@@ -32,3 +33,21 @@ def test_latest_estimates_keeps_distinct_trips() -> None:
 
 def test_latest_estimates_empty() -> None:
     assert latest_estimates([]) == []
+
+
+def test_parse_departure_realtime_true() -> None:
+    assert parse_departure(dummy_passage(type="E")) == Departure(
+        line="T2",
+        platform="32103",
+        time=datetime(2026, 10, 15, 23, 55, 44),
+        realtime=True,
+    )
+
+
+def test_parse_departure_realtime_false() -> None:
+    assert parse_departure(dummy_passage(type="T")) == Departure(
+        line="T2",
+        platform="32103",
+        time=datetime(2026, 10, 15, 23, 55, 44),
+        realtime=False,
+    )
