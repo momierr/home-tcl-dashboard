@@ -6,9 +6,9 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 
 from home_tcl_dashboard.alerts import active_alerts, parse_alert
-from home_tcl_dashboard.board import Board, build_banner, build_card
+from home_tcl_dashboard.board import Board, Favourite, build_banner, build_card
 from home_tcl_dashboard.cache import LastGood
-from home_tcl_dashboard.favourites import load_favourites
+from home_tcl_dashboard.favourites import load_favourites, save_favourites
 from home_tcl_dashboard.grandlyon import (
     download_gtfs,
     fetch_alerts,
@@ -67,6 +67,18 @@ app = FastAPI(lifespan=lifespan)
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/favourites")
+def get_favourites(request: Request) -> list[Favourite]:
+    return request.app.state.favourites
+
+
+@app.put("/api/favourites")
+def put_favourites(favourites: list[Favourite], request: Request) -> list[Favourite]:
+    save_favourites(FAV_PATH, favourites)
+    request.app.state.favourites = favourites
+    return favourites
 
 
 @app.get("/api/board")

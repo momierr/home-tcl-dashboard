@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from home_tcl_dashboard import app as app_module
 from home_tcl_dashboard.app import app
 from home_tcl_dashboard.board import Favourite
+from home_tcl_dashboard.favourites import load_favourites
 from home_tcl_dashboard.network import Line, Platform
 from home_tcl_dashboard.realtime import Departure
 
@@ -229,3 +230,41 @@ def test_board_serves_stale_data_when_grand_lyon_is_down(monkeypatch):
     assert body["stale"] is True
     assert body["updated_at"] is None  # alerts never succeeded
     assert [len(card["departures"]) for card in body["cards"]] == [1, 1]
+
+
+def start_without_network(monkeypatch, favourites_path):
+    monkeypatch.setattr(
+        app_module, "load_network", lambda: (FAKE_PLATFORMS, FAKE_LINES)
+    )
+    monkeypatch.setattr(app_module, "load_scheduled_departures", lambda lines: [])
+    monkeypatch.setattr(app_module, "FAV_PATH", favourites_path)
+
+
+def test_get_favourites_is_empty_on_first_start(monkeypatch, tmp_path):
+    start_without_network(monkeypatch, tmp_path / "favourites.json")
+
+    with TestClient(app) as client:
+        response = client.get("/api/favourites")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_put_favourites_saves_them_and_serves_them(monkeypatch, tmp_path):
+    path = tmp_path / "favourites.json"
+    start_without_network(monkeypatch, path)
+    new = [
+        {"line": "C9", "sens": "A", "platform": "33685"},
+        {"line": "T2", "sens": "A", "platform": "32103"},
+    ]
+
+    with TestClient(app) as client:
+        put = client.put("/api/favourites", json=new)
+        get = client.get("/api/favourites")
+
+    assert put.status_code == 200
+    assert get.json() == new
+    assert load_favourites(path) == [
+        Favourite(line="C9", sens="A", platform="33685"),
+        Favourite(line="T2", sens="A", platform="32103"),
+    ]
