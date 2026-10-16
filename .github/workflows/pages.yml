@@ -1,0 +1,42 @@
+name: Demo
+
+# The static demo on GitHub Pages (https://momierr.github.io/home-tcl-dashboard/):
+# the frontend, answering from the JSON recorded in demo/ instead of a server.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Assemble the site
+        run: |
+          mkdir _site
+          cp -r src/home_tcl_dashboard/static/. _site/
+          cp -r demo _site/demo
+          # window.DEMO makes app.js read demo/ instead of calling /api
+          sed -i 's|<script src="app.js"></script>|<script>window.DEMO = true;</script>\n<script src="app.js"></script>|' _site/index.html
+          grep -q "window.DEMO = true" _site/index.html
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

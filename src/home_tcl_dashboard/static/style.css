@@ -99,6 +99,13 @@ body {
 .status.offline .status-dot {
   background: var(--offline);
 }
+.status.demo {
+  background: var(--info-bg);
+  color: var(--info-ink);
+}
+.status.demo .status-dot {
+  background: var(--info-ink);
+}
 
 /* Traffic alert banner */
 button {

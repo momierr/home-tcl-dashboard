@@ -186,10 +186,14 @@ function go(hash) {
 // The official pictogram if it exists, else a badge in the line colour.
 function lineBadge(code, colour, size) {
   const badge = el("span", "badge", code);
-  badge.style.background = colour || "#596069";
+  const known = demo.lines !== null && demo.lines[code] ? demo.lines[code].colour : "";
+  badge.style.background = colour || known || "#596069";
   badge.style.fontSize = (size * 0.7) / 16 + "rem";
+  if (window.DEMO) {
+    return badge; // the demo has no pictograms (their licence is unclear)
+  }
   const img = el("img", "picto");
-  img.src = "/pictos/" + encodeURIComponent(code) + ".svg";
+  img.src = "pictos/" + encodeURIComponent(code) + ".svg"; // relative: works under a sub-path
   img.alt = code;
   img.style.height = size / 16 + "rem";
   img.onerror = () => img.replaceWith(badge);
@@ -217,6 +221,9 @@ function backButton(text) {
 }
 
 async function api(path, options) {
+  if (window.DEMO) {
+    return demoApi(path, options);
+  }
   const response = await fetch(path, options);
   const body = await response.json();
   if (!response.ok) {
@@ -224,6 +231,188 @@ async function api(path, options) {
     throw new Error(String(detail));
   }
   return body;
+}
+
+// ---------------------------------------------------------------- demo
+
+// On GitHub Pages there is no server: the Pages workflow sets window.DEMO, and
+// api() answers from the JSON files that scripts/snapshot_demo.py recorded.
+const demo = { snapshot: null, lines: null, offset: 0, offsetSince: 0 };
+const DEMO_REPLAY_MS = 45 * 60000; // the recorded departures last about an hour
+
+async function demoFile(name) {
+  const response = await fetch("demo/" + name);
+  if (!response.ok) {
+    throw new Error("Pas de donn\u00e9es pour cet arr\u00eat dans la d\u00e9mo");
+  }
+  return response.json();
+}
+
+// A Date -> "2026-10-16T20:26:40", local time, like the server sends.
+function isoLocal(date) {
+  const two = (n) => String(n).padStart(2, "0");
+  const day = date.getFullYear() + "-" + two(date.getMonth() + 1) + "-" + two(date.getDate());
+  return day + "T" + clock(date) + ":" + two(date.getSeconds());
+}
+
+// The recording is replayed from the visitor's arrival: every time in it moves
+// by the time elapsed since then. Started again when the departures run out.
+async function demoStart() {
+  if (demo.snapshot === null) {
+    demo.snapshot = await demoFile("snapshot.json");
+  }
+  if (Date.now() - demo.offsetSince > DEMO_REPLAY_MS) {
+    demo.offset = Date.now() - parseTime(demo.snapshot.now);
+    demo.offsetSince = Date.now();
+  }
+}
+
+function demoShift(value) {
+  if (typeof value === "string" && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d/.test(value)) {
+    return isoLocal(new Date(parseTime(value).getTime() + demo.offset));
+  }
+  if (Array.isArray(value)) {
+    return value.map(demoShift);
+  }
+  if (value !== null && typeof value === "object") {
+    const copy = {};
+    Object.keys(value).forEach((key) => {
+      copy[key] = demoShift(value[key]);
+    });
+    return copy;
+  }
+  return value;
+}
+
+// The visitor's own favourites stay in their browser; the recorded ones first.
+function demoFavourites() {
+  try {
+    const saved = JSON.parse(remembered("demo-favourites"));
+    return Array.isArray(saved) ? saved : demo.snapshot.favourites;
+  } catch (error) {
+    return demo.snapshot.favourites;
+  }
+}
+
+// Every line by code (colour, destinations), from the three tabs.
+async function demoLines() {
+  if (demo.lines === null) {
+    const tabs = await Promise.all(MODES.map(([mode]) => demoFile("lines-" + mode + ".json")));
+    demo.lines = {};
+    tabs.forEach((lines) => lines.forEach((line) => {
+      demo.lines[line.code] = line;
+    }));
+  }
+  return demo.lines;
+}
+
+// A stop the recording has no departures for (a bus added in the demo): its
+// names and next stops, without departures.
+async function demoStopWithoutDepartures(platform, line, sens) {
+  const info = (await demoLines())[line];
+  const stops = await demoFile("stops/" + line + "-" + sens + ".json");
+  const index = stops.map((stop) => stop.platform).indexOf(platform);
+  if (!info || index < 0) {
+    throw new Error("Pas de donn\u00e9es pour cet arr\u00eat dans la d\u00e9mo");
+  }
+  const shown = stops.slice(index, index + 7).map((stop) => stop.name);
+  return {
+    line: line,
+    colour: info.colour,
+    platform_name: stops[index].name,
+    destination: info.destinations[sens],
+    departures: [],
+    next_stops: shown,
+    remaining: stops.length - index - shown.length,
+    stale: false,
+  };
+}
+
+async function demoDetail(platform, line, sens) {
+  let detail;
+  try {
+    detail = demoShift(await demoFile("detail/" + platform + "-" + line + "-" + sens + ".json"));
+  } catch (error) {
+    detail = await demoStopWithoutDepartures(platform, line, sens);
+  }
+  const here = { line: line, sens: sens, platform: platform };
+  detail.favourite = demoFavourites().some((f) => sameFavourite(f, here));
+  detail.now = isoLocal(new Date());
+  return detail;
+}
+
+async function demoCard(favourite, alerts) {
+  const card = {
+    line: favourite.line,
+    sens: favourite.sens,
+    platform: favourite.platform,
+    colour: "",
+    platform_name: favourite.platform,
+    destination: "",
+    departures: [],
+    disrupted: alerts.some((a) => a.line === favourite.line && a.kind === "Perturbation"),
+  };
+  const detail = await demoDetail(favourite.platform, favourite.line, favourite.sens);
+  const now = new Date();
+  return Object.assign(card, {
+    colour: detail.colour,
+    platform_name: detail.platform_name,
+    destination: detail.destination,
+    departures: detail.departures.filter((d) => parseTime(d.time) >= now).slice(0, 3),
+  });
+}
+
+async function demoAlerts() {
+  const page = await demoFile("alerts.json");
+  const lines = demoFavourites().map((f) => f.line);
+  page.mine = page.network.filter((alert) => lines.indexOf(alert.line) >= 0);
+  page.updated_at = isoLocal(new Date());
+  return page;
+}
+
+async function demoBoard() {
+  await demoLines(); // the banner's badge takes its line colour from them
+  const favourites = demoFavourites();
+  const alerts = (await demoAlerts()).mine;
+  const cards = await Promise.all(favourites.map((f) => demoCard(f, alerts)));
+  let banner = null;
+  if (alerts.length > 0) {
+    const worst = alerts.slice().sort((a, b) => a.severity - b.severity)[0];
+    banner = { line: worst.line, title: worst.title, count: alerts.length };
+  }
+  const now = isoLocal(new Date());
+  return { cards: cards, banner: banner, now: now, updated_at: now, stale: false };
+}
+
+// The same answers as the server's /api routes.
+async function demoApi(path, options) {
+  await demoStart();
+  const [route, query] = path.split("?");
+  const parts = route.split("/").slice(2).map(decodeURIComponent); // after "/api/"
+  if (parts[0] === "favourites") {
+    if (options && options.method === "PUT") {
+      remember("demo-favourites", options.body);
+      return JSON.parse(options.body);
+    }
+    return demoFavourites();
+  }
+  if (parts[0] === "board") {
+    return demoBoard();
+  }
+  if (parts[0] === "alerts") {
+    return demoAlerts();
+  }
+  if (parts[0] === "stops") {
+    return demoDetail(parts[1], parts[2], parts[3]);
+  }
+  if (parts[0] === "lines" && parts.length === 1) {
+    return demoFile("lines-" + query.split("mode=")[1] + ".json");
+  }
+  if (parts[0] === "lines") {
+    const folder = parts[3] === "map" ? "maps/" : "stops/";
+    return demoFile(folder + parts[1] + "-" + parts[2] + ".json");
+  }
+  throw new Error("Pas dans la d\u00e9mo : " + path);
 }
 
 function putFavourites(favourites) {
@@ -342,6 +531,14 @@ function restoreScrolls(app, scrolls) {
 // ---------------------------------------------------------------- home
 
 function statusChip(now) {
+  if (window.DEMO) {
+    const recorded = parseTime(demo.snapshot.now);
+    const when = recorded.getDate() + " " + MONTHS[recorded.getMonth()] + " " + clock(recorded);
+    const status = el("div", "status demo");
+    status.appendChild(el("span", "status-dot"));
+    status.appendChild(el("span", "", "D\u00e9mo \u00b7 horaires du " + when));
+    return status;
+  }
   const offline = data.stale || !reachable;
   const status = el("div", offline ? "status offline" : "status");
   status.appendChild(el("span", "status-dot"));
