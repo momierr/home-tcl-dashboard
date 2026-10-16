@@ -1,0 +1,624 @@
+/* Sizes are in rem: app.js sets the root font size from the screen size,
+   so the whole dashboard scales with the display (1rem = 16px at 1024x768). */
+
+/* Day theme; the night theme only redefines these variables. */
+:root {
+  --bg: #ECEEF1;
+  --surface: #FFFFFF;
+  --ink: #15171A;
+  --muted: #596069;
+  --line: #E1E4E8;
+  --alert-bg: #FFF1CC;
+  --alert-ink: #6B4100;
+  --ok: #15803D;
+  --offline: #C2410C;
+  --info-bg: #E3EAF4;
+  --info-ink: #1F3B63;
+  --selected: #E6F4EC;
+}
+
+/* Night theme: only the colours change (class set by app.js from 20:00 to 07:00). */
+body.night {
+  --bg: #0E1013;
+  --surface: #1A1D21;
+  --ink: #F2F3F5;
+  --muted: #A3A9B0;
+  --line: #2C3036;
+  --alert-bg: #3B2A08;
+  --alert-ink: #FCD34D;
+  --info-bg: #1C2A3D;
+  --info-ink: #BFD3F2;
+  --selected: #163323;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: sans-serif;
+}
+
+#app {
+  box-sizing: border-box;
+  height: 100vh;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Header: clock, date, status */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.clock {
+  font-size: 3rem;
+  font-weight: bold;
+}
+.date {
+  margin-left: 1rem;
+  font-size: 1.25rem;
+  color: var(--muted);
+}
+.status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 1.25rem;
+  background: var(--surface);
+  color: var(--muted);
+}
+.status-dot {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 0.3125rem;
+  background: var(--ok);
+}
+.status.offline .status-dot {
+  background: var(--offline);
+}
+
+/* Traffic alert banner */
+button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  cursor: pointer;
+}
+
+.banner {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-radius: 0.875rem;
+  background: var(--alert-bg);
+  color: var(--alert-ink);
+  font-size: 1.125rem;
+}
+.banner-title {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Cards: 2 columns, up to 6 favourites */
+.cards {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  /* minmax(0, ...): a long stop name must not widen its column */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 1rem;
+}
+.card {
+  min-width: 0;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 0;
+  padding: 1.25rem 1.5rem;
+  border-radius: 1.125rem;
+  background: var(--surface);
+}
+.card-top {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.badge {
+  padding: 0.25rem 0.625rem;
+  border-radius: 0.5rem;
+  color: #FFFFFF;
+  font-weight: bold;
+  font-size: 1.375rem;
+}
+.stop {
+  flex: 1;
+  font-size: 1.625rem;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pill {
+  padding: 0.25rem 0.625rem;
+  border-radius: 0.5rem;
+  background: var(--alert-bg);
+  color: var(--alert-ink);
+  font-weight: bold;
+}
+.destination {
+  font-size: 1.125rem;
+  color: var(--muted);
+}
+.countdowns {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+.next {
+  font-size: 5.5rem;
+  font-weight: bold;
+  line-height: 0.85;
+}
+.unit {
+  margin-left: 0.5rem;
+  font-size: 1.75rem;
+}
+.later {
+  text-align: right;
+  font-size: 2.125rem;
+  font-weight: bold;
+}
+.later-small {
+  font-size: 1.125rem;
+  font-weight: normal;
+  color: var(--muted);
+}
+.card-bottom {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+}
+.empty {
+  font-size: 1.375rem;
+  color: var(--muted);
+}
+
+.picto {
+  width: auto;
+  flex-shrink: 0;
+}
+.badge {
+  flex-shrink: 0;
+}
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.chip,
+.back {
+  padding: 0.75rem 1.125rem;
+  border-radius: 1rem;
+  background: var(--surface);
+  font-size: 1.125rem;
+  font-weight: bold;
+}
+.header > .back + * {
+  margin-left: 1.25rem;
+}
+.title {
+  flex: 1;
+  margin-left: 1rem;
+}
+.title-main {
+  margin: 0;
+  font-size: 1.875rem;
+  font-weight: bold;
+}
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+.muted {
+  color: var(--muted);
+}
+.pill.info {
+  background: var(--info-bg);
+  color: var(--info-ink);
+}
+
+/* Two panels side by side (detail and edit screens) */
+.columns {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 1rem;
+}
+.panel {
+  flex: 2;
+  min-width: 0;
+  overflow: auto;
+  padding: 1.25rem 1.5rem;
+  border-radius: 1.125rem;
+  background: var(--surface);
+}
+.panel.wide {
+  flex: 3;
+}
+.panel h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.25rem;
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Detail: departures and the timeline of the next stops */
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0.875rem 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 2rem;
+  font-weight: bold;
+}
+.row .muted {
+  font-size: 1.375rem;
+  font-weight: normal;
+}
+.row.first {
+  font-size: 4rem;
+}
+.timeline {
+  margin: 0;
+  padding: 0 0 0 0.625rem;
+  list-style: none;
+}
+.timeline li {
+  display: flex;
+  align-items: center;
+  height: 3rem;
+  padding-left: 1.125rem;
+  border-left: 0.25rem solid;
+  font-size: 1.1875rem;
+}
+.timeline li.current {
+  font-weight: bold;
+}
+
+/* Alerts */
+.tabs {
+  display: flex;
+  padding: 0.25rem;
+  border-radius: 1rem;
+  background: var(--surface);
+}
+.tab {
+  padding: 0.75rem 1.125rem;
+  border-radius: 0.75rem;
+  background: transparent;
+  font-size: 1.0625rem;
+}
+.tab.on {
+  background: var(--ink);
+  color: var(--bg);
+  font-weight: bold;
+}
+.alerts {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.alert {
+  flex: none;
+  display: flex;
+  gap: 1.25rem;
+}
+.alert h2 {
+  margin: 0.5rem 0;
+  font-size: 1.375rem;
+}
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.message {
+  margin: 0;
+  font-size: 1.125rem;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Edit */
+.fav {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.fav-stop {
+  font-size: 1.1875rem;
+  font-weight: bold;
+}
+.fav .muted {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.icon {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.75rem;
+  background: var(--bg);
+}
+.step {
+  margin: 0.875rem 0 0.5rem;
+  font-weight: bold;
+  color: var(--muted);
+}
+.choices {
+  display: flex;
+  gap: 0.5rem;
+}
+.choices.wrap {
+  flex-wrap: wrap;
+}
+.choice {
+  flex: 1;
+  min-height: 3rem;
+  padding: 0 0.625rem;
+  border-radius: 0.75rem;
+  background: var(--bg);
+  font-size: 1.0625rem;
+}
+.choices.wrap .choice {
+  flex: none;
+}
+.choice.on {
+  outline: 0.1875rem solid var(--ink);
+  font-weight: bold;
+}
+.stops {
+  max-height: 11.25rem;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+}
+.stop-row {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  font-size: 1.125rem;
+  text-align: left;
+}
+.stop-row.on {
+  background: var(--selected);
+  font-weight: bold;
+}
+.add {
+  width: 100%;
+  margin-top: 0.875rem;
+  padding: 1rem;
+  border-radius: 0.875rem;
+  background: #C8001A;
+  color: #FFFFFF;
+  font-size: 1.1875rem;
+  font-weight: bold;
+}
+.error {
+  margin: 0;
+  color: var(--offline);
+  font-weight: bold;
+}
+
+/* Icons */
+.with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 1rem;
+  background: var(--surface);
+}
+.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.panel-head .with-icon {
+  color: var(--muted);
+  font-weight: 500;
+}
+.panel-head .offline-text {
+  color: var(--offline);
+}
+
+/* Portrait screens (a phone, a rotated tablet): one column. */
+@media (orientation: portrait) {
+  /* the page scrolls instead of squeezing the cards into the screen height */
+  #app {
+    height: auto;
+    min-height: 100vh;
+  }
+  .cards {
+    grid-template-columns: 1fr;
+    grid-auto-rows: 14rem;
+  }
+  .columns {
+    flex-direction: column;
+  }
+}
+
+/* Browse: lines, stops and the line map */
+.browse-lines {
+  max-height: 9rem;
+  overflow: auto;
+  margin: 0.75rem 0;
+}
+.browse-stops {
+  margin-top: 0.75rem;
+}
+.stop-link {
+  padding: 0;
+  background: transparent;
+  font-size: inherit;
+  font-weight: inherit;
+  text-align: left;
+}
+.browse-right {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.browse-map {
+  /* Leaflet's panes use z-index 400+: keep them below the rest of the page */
+  position: relative;
+  z-index: 0;
+  flex: 1;
+  min-height: 12rem;
+  border-radius: 0.75rem;
+  background: var(--bg);
+}
+.browse-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.browse-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.tiles {
+  display: flex;
+  gap: 0.75rem;
+}
+.tile {
+  flex: 1;
+  padding: 0.5rem 0.875rem;
+  border-left: 0.3rem solid;
+  border-radius: 0.5rem;
+  background: var(--bg);
+}
+.tile-wait {
+  font-size: 1.75rem;
+  font-weight: bold;
+}
+.live {
+  color: var(--ok);
+  font-weight: bold;
+}
+
+/* 5 or 6 favourites: three rows of cards, so smaller countdowns */
+.cards.compact .card {
+  padding: 0.875rem 1.25rem 0.75rem;
+}
+.cards.compact .next {
+  font-size: 3.75rem;
+}
+.cards.compact .unit {
+  font-size: 1.375rem;
+}
+.cards.compact .later {
+  font-size: 1.625rem;
+}
+.cards.compact .card-bottom {
+  padding-top: 0.5rem;
+}
+.cards.offline .next,
+.cards.offline .unit,
+.cards.offline .later {
+  color: var(--muted);
+}
+
+/* Alerts: a fixed column for the pictograms, a tap unfolds the message */
+.alert {
+  cursor: pointer;
+}
+.alert-line {
+  width: 6.5rem;
+  flex-shrink: 0;
+}
+.alert.open .message {
+  display: block;
+  overflow: visible;
+}
+
+/* Edit: the long bus list scrolls on its own, so steps 3 and 4 stay visible */
+.panel .choices.wrap {
+  max-height: 9rem;
+  overflow: auto;
+}
+.panel .stops {
+  max-height: 9.5rem;
+}
+.add.disabled {
+  margin-bottom: 0;
+  background: var(--bg);
+  color: var(--muted);
+  font-weight: normal;
+  text-align: center;
+  cursor: default;
+}
+
+/* Browse: empty and error hints, centred in the map box */
+.map-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  margin: 0;
+  padding: 1rem;
+  box-sizing: border-box;
+  text-align: center;
+  color: var(--muted);
+  font-size: 1.25rem;
+}
+/* A dark map at night: invert the tiles, keep the hues */
+body.night .leaflet-tile-pane {
+  filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+}
+
+@media (orientation: portrait) {
+  .header {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .browse-right {
+    order: -1;
+    min-height: 60vh;
+  }
+}

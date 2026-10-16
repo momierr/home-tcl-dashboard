@@ -2,7 +2,14 @@ import re
 from dataclasses import dataclass, field
 
 PREFIX_ORDER = ["C", "", "N", "A", "T", "TB", "PL", "J"]
+Point = tuple[float, float]  # (lat, lon), as the WFS and Leaflet use them
+
 MODES = {"MET": "metro", "FUN": "metro", "TRA": "tram", "BUS": "bus"}
+
+
+def clean_text(text: str) -> str:
+    """Grand Lyon text: 'Gare Part  Dieu' -> 'Gare Part Dieu', drops a dangling ' -'."""
+    return re.sub(r"\s+[-.]+$", "", " ".join(text.split()))
 
 
 @dataclass
@@ -33,7 +40,7 @@ def parse_desserte(desserte: str) -> set[tuple[str, str]]:
 def parse_platform(row: dict[str, str]) -> Platform:
     return Platform(
         id=row["id"],
-        name=row["nom"],
+        name=clean_text(row["nom"]),
         line_directions=parse_desserte(row["desserte"]),
     )
 
@@ -47,7 +54,7 @@ def parse_lines(rows: list[dict[str, str]]) -> dict[str, Line]:
             lines[code] = Line(code, row["famille_transport"], row["couleur_hex"])
         sens = row["sens"][0]
         if sens not in lines[code].destinations:
-            lines[code].destinations[sens] = row["nom_destination"]
+            lines[code].destinations[sens] = clean_text(row["nom_destination"])
 
     return lines
 
@@ -93,3 +100,26 @@ def timeline(
     if name not in names:
         return [name], 0
     return next_stops(names, name, n)
+
+
+def parse_points(wkt: str) -> list[Point]:
+    """'POINT (45.75 4.83)' -> [(45.75, 4.83)]; works for any WKT geometry."""
+    numbers = [float(x) for x in re.findall(r"-?\d+(?:\.\d+)?", wkt)]
+    return list(zip(numbers[::2], numbers[1::2], strict=True))
+
+
+def parse_trace(wkt: str) -> list[list[Point]]:
+    """'MULTILINESTRING ((a b, c d), (e f, g h))' -> one list of points per part."""
+    return [parse_points(part) for part in re.findall(r"\(([^()]+)\)", wkt)]
+
+
+def parse_traces(
+    line_rows: list[dict[str, str]],
+) -> dict[tuple[str, str], list[list[Point]]]:
+    """(line, sens) -> its trace, from the first row of each direction."""
+    traces: dict[tuple[str, str], list[list[Point]]] = {}
+    for row in line_rows:
+        key = (row["code_ligne"], row["sens"][0])  # "Aller" -> "A"
+        if key not in traces:  # some lines have 2 traces per sens
+            traces[key] = parse_trace(row["the_geom"])
+    return traces

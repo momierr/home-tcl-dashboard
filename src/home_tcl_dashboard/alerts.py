@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from home_tcl_dashboard.network import clean_text
+
 
 @dataclass
 class Alert:
@@ -22,7 +24,7 @@ def parse_alert(row: dict[str, Any]) -> Alert:
         severity=row["niveauseverite"],
         start=datetime.fromisoformat(row["debut"]),
         end=datetime.fromisoformat(row["fin"]),
-        title=row["titre"],
+        title=clean_text(row["titre"]),
         message=row["message"],
     )
 

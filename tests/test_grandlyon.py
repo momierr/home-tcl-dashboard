@@ -1,10 +1,13 @@
+import io
 import os
 import time
+import zipfile
 
 import requests
 
 from home_tcl_dashboard.grandlyon import (
     download_gtfs,
+    download_pictograms,
     fetch_alerts,
     fetch_passages,
     fetch_wfs,
@@ -163,3 +166,34 @@ def test_fetch_alerts_returns_values(monkeypatch):
     assert alerts == [{"ligne_cli": "D", "niveauseverite": 20}]
     assert calls[0]["url"].endswith("tcl_sytral.tclalertetrafic_2/all.json")
     assert calls[0]["auth"] == ("user", "pwd")
+
+
+class FakePictosResponse:
+    def raise_for_status(self) -> None:
+        pass
+
+    @property
+    def content(self) -> bytes:
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("A.svg", "<svg/>")
+        return buffer.getvalue()
+
+
+def test_download_pictograms_extracts_the_svgs(tmp_path, monkeypatch):
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: FakePictosResponse())
+
+    download_pictograms(tmp_path / "pictos", ("user", "pwd"))
+
+    assert (tmp_path / "pictos" / "A.svg").read_text() == "<svg/>"
+
+
+def test_download_pictograms_skips_when_already_there(tmp_path, monkeypatch):
+    (tmp_path / "pictos").mkdir()
+
+    def no_network(*args, **kwargs):
+        raise AssertionError("should not download again")
+
+    monkeypatch.setattr(requests, "get", no_network)
+
+    download_pictograms(tmp_path / "pictos", ("user", "pwd"))

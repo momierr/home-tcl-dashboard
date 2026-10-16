@@ -120,6 +120,8 @@ def test_board_returns_one_card_per_favourite(monkeypatch):
         app_module, "load_scheduled_departures", lambda lines, today: []
     )
     monkeypatch.setattr(app_module, "load_stop_orders", lambda lines: None)
+    monkeypatch.setattr(app_module, "load_pictograms", lambda: None)
+    monkeypatch.setattr(app_module, "load_geometry", lambda: ({}, {}))
     monkeypatch.setattr(app_module, "load_favourites", lambda path: FAKE_FAVOURITES)
     monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
     monkeypatch.setattr(app_module, "fetch_passages", fake_fetch_passages)
@@ -136,6 +138,9 @@ def test_board_returns_one_card_per_favourite(monkeypatch):
         "cards": [
             {
                 "line": "T2",
+                "sens": "A",
+                "platform": "32103",
+                "colour": "#6BA230",
                 "platform_name": "Perrache",
                 "destination": "Saint-Priest Bel Air",
                 "departures": [
@@ -150,6 +155,9 @@ def test_board_returns_one_card_per_favourite(monkeypatch):
             },
             {
                 "line": "C9",
+                "sens": "A",
+                "platform": "33685",
+                "colour": "#C88817",
                 "platform_name": "Bellecour A. Poncet",
                 "destination": "Hopitaux Est",
                 "departures": [
@@ -188,6 +196,8 @@ def test_board_uses_the_timetable_for_the_metro(monkeypatch):
         app_module, "load_scheduled_departures", lambda lines, today: [scheduled]
     )
     monkeypatch.setattr(app_module, "load_stop_orders", lambda lines: None)
+    monkeypatch.setattr(app_module, "load_pictograms", lambda: None)
+    monkeypatch.setattr(app_module, "load_geometry", lambda: ({}, {}))
     monkeypatch.setattr(app_module, "fetch_passages", no_realtime)
     monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
     monkeypatch.setattr(app_module, "fetch_alerts", lambda auth: [])
@@ -225,6 +235,8 @@ def test_board_serves_stale_data_when_grand_lyon_is_down(monkeypatch):
         app_module, "load_scheduled_departures", lambda lines, today: []
     )
     monkeypatch.setattr(app_module, "load_stop_orders", lambda lines: None)
+    monkeypatch.setattr(app_module, "load_pictograms", lambda: None)
+    monkeypatch.setattr(app_module, "load_geometry", lambda: ({}, {}))
     monkeypatch.setattr(app_module, "load_favourites", lambda path: FAKE_FAVOURITES)
     monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
     monkeypatch.setattr(app_module, "fetch_passages", flaky_fetch_passages)
@@ -249,6 +261,8 @@ def start_without_network(monkeypatch, favourites_path):
         app_module, "load_scheduled_departures", lambda lines, today: []
     )
     monkeypatch.setattr(app_module, "load_stop_orders", lambda lines: None)
+    monkeypatch.setattr(app_module, "load_pictograms", lambda: None)
+    monkeypatch.setattr(app_module, "load_geometry", lambda: ({}, {}))
     monkeypatch.setattr(app_module, "FAV_PATH", favourites_path)
 
 
@@ -461,3 +475,78 @@ def test_load_scheduled_departures_keeps_the_old_file_when_download_fails(
     app_module.load_scheduled_departures({}, date(2026, 10, 16))
 
     assert built_from == [(path, [date(2026, 10, 15), date(2026, 10, 16)])]
+
+
+def test_the_home_page_is_served(monkeypatch, tmp_path):
+    start_without_network(monkeypatch, tmp_path / "favourites.json")
+
+    with TestClient(app) as client:
+        page = client.get("/")
+        api = client.get("/api/health")
+
+    assert page.status_code == 200
+    assert "app.js" in page.text
+    assert api.json() == {"status": "ok"}
+
+
+def test_get_alerts_splits_my_lines_from_the_network(monkeypatch, tmp_path):
+    path = tmp_path / "favourites.json"
+    save_favourites(path, [Favourite(line="T2", sens="A", platform="32103")])
+    start_without_network(monkeypatch, path)
+    monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
+    rows = [
+        {
+            "ligne_cli": line,
+            "type": "Perturbation",
+            "niveauseverite": severity,
+            "debut": "2026-01-01 00:00:00",
+            "fin": "2099-01-01 00:00:00",
+            "titre": title,
+            "message": "",
+        }
+        for line, severity, title in [
+            ("C9", 30, "Info C9"),
+            ("T2", 30, "Info T2"),
+            ("T2", 20, "Travaux T2"),
+        ]
+    ]
+    monkeypatch.setattr(app_module, "fetch_alerts", lambda auth: rows)
+
+    with TestClient(app) as client:
+        body = client.get("/api/alerts").json()
+
+    assert [alert["title"] for alert in body["mine"]] == ["Travaux T2", "Info T2"]
+    assert [alert["title"] for alert in body["network"]] == [
+        "Travaux T2",
+        "Info C9",
+        "Info T2",
+    ]
+    assert body["stale"] is False
+
+
+def test_get_line_map_gives_the_trace_and_ordered_stops(monkeypatch, tmp_path):
+    lines = {"T2": Line("T2", "TRA", "#6BA230", stops={"A": ["33685", "32103"]})}
+    positions = {"32103": (45.7, 4.8), "33685": (45.75, 4.83)}
+    traces = {("T2", "A"): [[(45.75, 4.83), (45.7, 4.8)]]}
+    start_without_network(monkeypatch, tmp_path / "favourites.json")
+    monkeypatch.setattr(app_module, "load_network", lambda: (FAKE_PLATFORMS, lines))
+    monkeypatch.setattr(app_module, "load_geometry", lambda: (positions, traces))
+
+    with TestClient(app) as client:
+        response = client.get("/api/lines/T2/A/map")
+        unknown = client.get("/api/lines/ZZZ/A/map")
+
+    assert response.json() == {
+        "colour": "#6BA230",
+        "trace": [[[45.75, 4.83], [45.7, 4.8]]],
+        "stops": [
+            {
+                "platform": "33685",
+                "name": "Bellecour A. Poncet",
+                "lat": 45.75,
+                "lon": 4.83,
+            },
+            {"platform": "32103", "name": "Perrache", "lat": 45.7, "lon": 4.8},
+        ],
+    }
+    assert unknown.status_code == 404

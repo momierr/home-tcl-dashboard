@@ -38,6 +38,9 @@ def test_build_card_for_perrache_t2() -> None:
 
     assert card == Card(
         line="T2",
+        sens="A",
+        platform="32103",
+        colour="#009E3D",
         platform_name="Perrache",
         destination="Saint-Priest Bel Air",
         departures=[t2],

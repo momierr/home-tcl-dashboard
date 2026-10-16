@@ -1,12 +1,18 @@
+import pytest
+
 from home_tcl_dashboard.network import (
     Line,
     Platform,
+    clean_text,
     line_sort_key,
     lines_of_mode,
     next_stops,
     parse_desserte,
     parse_lines,
     parse_platform,
+    parse_points,
+    parse_trace,
+    parse_traces,
     timeline,
 )
 
@@ -168,3 +174,59 @@ def test_timeline_finds_a_twin_platform_by_its_station_name() -> None:
 
 def test_timeline_shows_only_a_stop_that_is_not_on_the_trip() -> None:
     assert timeline(["1", "2", "3"], "9", TIMELINE_PLATFORMS) == (["Variante"], 0)
+
+
+def test_parse_points_point() -> None:
+    assert parse_points("POINT (45.75 4.83)") == [(45.75, 4.83)]
+
+
+def test_parse_points_with_negative_values() -> None:
+    assert parse_points("LINESTRING (45.7 -4.8, 46 5)") == [(45.7, -4.8), (46.0, 5.0)]
+
+
+def test_parse_trace_keeps_the_parts_apart() -> None:
+    wkt = "MULTILINESTRING ((45.0 4.0, 45.1 4.1), (46.0 5.0, 46.1 5.1))"
+
+    assert parse_trace(wkt) == [
+        [(45.0, 4.0), (45.1, 4.1)],
+        [(46.0, 5.0), (46.1, 5.1)],
+    ]
+
+
+def test_parse_traces_keeps_the_first_trace_of_a_direction() -> None:
+    rows = [
+        {
+            "code_ligne": "43",
+            "sens": "Aller",
+            "the_geom": "MULTILINESTRING ((1 1, 2 2))",
+        },
+        {
+            "code_ligne": "43",
+            "sens": "Aller",
+            "the_geom": "MULTILINESTRING ((9 9, 8 8))",
+        },
+        {
+            "code_ligne": "43",
+            "sens": "Retour",
+            "the_geom": "MULTILINESTRING ((2 2, 1 1))",
+        },
+    ]
+
+    assert parse_traces(rows) == {
+        ("43", "A"): [[(1.0, 1.0), (2.0, 2.0)]],
+        ("43", "R"): [[(2.0, 2.0), (1.0, 1.0)]],
+    }
+
+
+@pytest.mark.parametrize(
+    "raw, clean",
+    [
+        ("Gare Part  Dieu", "Gare Part Dieu"),
+        ("Charpennes Charles Hernu .", "Charpennes Charles Hernu"),
+        ("D\u00e9vi\u00e9e deux sens -", "D\u00e9vi\u00e9e deux sens"),
+        ("St-Genis-Laval H\u00f4p. Sud", "St-Genis-Laval H\u00f4p. Sud"),
+        ("Vieux Lyon Cat.St Jean", "Vieux Lyon Cat.St Jean"),
+    ],
+)
+def test_clean_text(raw: str, clean: str) -> None:
+    assert clean_text(raw) == clean

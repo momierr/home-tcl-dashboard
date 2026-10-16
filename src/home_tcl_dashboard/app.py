@@ -7,9 +7,10 @@ from typing import Literal
 
 import requests
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import State
 
-from home_tcl_dashboard.alerts import active_alerts, parse_alert
+from home_tcl_dashboard.alerts import Alert, active_alerts, parse_alert
 from home_tcl_dashboard.board import Board, Favourite, build_banner, build_card
 from home_tcl_dashboard.cache import LastGood
 from home_tcl_dashboard.favourites import (
@@ -19,6 +20,7 @@ from home_tcl_dashboard.favourites import (
 )
 from home_tcl_dashboard.grandlyon import (
     download_gtfs,
+    download_pictograms,
     fetch_alerts,
     fetch_passages,
     fetch_wfs,
@@ -28,9 +30,12 @@ from home_tcl_dashboard.gtfs import build_departures, stop_orders
 from home_tcl_dashboard.network import (
     Line,
     Platform,
+    Point,
     lines_of_mode,
     parse_lines,
     parse_platform,
+    parse_points,
+    parse_traces,
     timeline,
 )
 from home_tcl_dashboard.realtime import (
@@ -47,7 +52,9 @@ SCHEDULED_MODES = {"MET", "FUN"}
 
 
 GTFS_PATH = Path("data/GTFS_TCL.ZIP")
+STATIC_DIR = Path(__file__).parent / "static"
 FAV_PATH = Path("data/favourites.json")
+PICTOS_DIR = Path("data/pictos")
 
 
 def load_network() -> tuple[dict[str, Platform], dict[str, Line]]:
@@ -95,12 +102,39 @@ def load_stop_orders(lines: dict[str, Line]) -> None:
         lines[code].stops[sens] = stops
 
 
+def load_geometry() -> tuple[
+    dict[str, Point], dict[tuple[str, str], list[list[Point]]]
+]:
+    """Platform positions and line traces, for the line map (browse screen)."""
+    positions = {
+        row["id"]: parse_points(row["the_geom"])[0]
+        for row in fetch_wfs("tclarret", "id,the_geom")
+        if row["the_geom"]
+    }
+    line_rows = [
+        row
+        for layer in LINE_LAYERS
+        for row in fetch_wfs(layer, "code_ligne,sens,the_geom", REGULAR_TRACES)
+    ]
+    return positions, parse_traces(line_rows)
+
+
+def load_pictograms() -> None:
+    """Download the line pictograms once; without them the screens show badges."""
+    try:
+        download_pictograms(PICTOS_DIR, get_auth())
+    except requests.RequestException:
+        pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.platforms, app.state.lines = load_network()
     app.state.scheduled_for = None
     refresh_timetable(app.state, date.today())
     load_stop_orders(app.state.lines)
+    load_pictograms()
+    app.state.positions, app.state.traces = load_geometry()
     app.state.passages = LastGood()
     app.state.alerts = LastGood()
     app.state.favourites = load_favourites(FAV_PATH)
@@ -169,6 +203,38 @@ def get_stops(
         StopSummary(platform=platform_id, name=platforms[platform_id].name)
         for platform_id in lines[code].stops[sens]
     ]
+
+
+@dataclass
+class MapStop:
+    platform: str
+    name: str
+    lat: float
+    lon: float
+
+
+@dataclass
+class LineMap:
+    colour: str
+    trace: list[list[Point]]
+    stops: list[MapStop]
+
+
+@app.get("/api/lines/{code}/{sens}/map")
+def get_line_map(code: str, sens: Literal["A", "R"], request: Request) -> LineMap:
+    """The trace of one direction of a line, and its stops in travel order."""
+    lines = request.app.state.lines
+    if code not in lines or sens not in lines[code].stops:
+        raise HTTPException(status_code=404, detail=f"unknown line {code} sens {sens}")
+    platforms = request.app.state.platforms
+    positions = request.app.state.positions
+    stops = [
+        MapStop(platform_id, platforms[platform_id].name, *positions[platform_id])
+        for platform_id in lines[code].stops[sens]
+        if platform_id in positions
+    ]
+    trace = request.app.state.traces.get((code, sens), [])
+    return LineMap(colour=lines[code].colour, trace=trace, stops=stops)
 
 
 def current_departures(
@@ -240,6 +306,38 @@ def stop_detail(
     )
 
 
+def current_alerts(request: Request, now: datetime) -> tuple[list[Alert], bool]:
+    """The active traffic alerts, and if they are stale."""
+    stale = request.app.state.alerts.refresh(lambda: fetch_alerts(get_auth()), now)
+    alerts = active_alerts(
+        [parse_alert(row) for row in request.app.state.alerts.rows], now
+    )
+    return alerts, stale
+
+
+@dataclass
+class AlertsPage:
+    mine: list[Alert]
+    network: list[Alert]
+    updated_at: datetime | None
+    stale: bool
+
+
+@app.get("/api/alerts")
+def get_alerts(request: Request) -> AlertsPage:
+    """Active alerts, most serious first: on the favourite lines, and network-wide."""
+    now = datetime.now()
+    alerts, stale = current_alerts(request, now)
+    alerts.sort(key=lambda alert: (alert.severity, alert.line))
+    favourite_lines = {favourite.line for favourite in request.app.state.favourites}
+    return AlertsPage(
+        mine=[alert for alert in alerts if alert.line in favourite_lines],
+        network=alerts,
+        updated_at=request.app.state.alerts.fetched_at,
+        stale=stale,
+    )
+
+
 @app.get("/api/board")
 def board(request: Request) -> Board:
     """One card per favourite, with its next departures."""
@@ -248,13 +346,7 @@ def board(request: Request) -> Board:
     departures, passages_stale = current_departures(
         request, request.app.state.favourites, now
     )
-
-    alerts_stale = request.app.state.alerts.refresh(
-        lambda: fetch_alerts(get_auth()), now
-    )
-    alerts = active_alerts(
-        [parse_alert(row) for row in request.app.state.alerts.rows], now
-    )
+    alerts, alerts_stale = current_alerts(request, now)
 
     platforms = request.app.state.platforms
     cards = [
@@ -268,3 +360,8 @@ def board(request: Request) -> Board:
         updated_at=request.app.state.alerts.fetched_at,
         stale=passages_stale or alerts_stale,
     )
+
+
+app.mount("/pictos", StaticFiles(directory=PICTOS_DIR, check_dir=False), name="pictos")
+# Last: a mount on "/" catches every URL, so the /api routes must come first.
+app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

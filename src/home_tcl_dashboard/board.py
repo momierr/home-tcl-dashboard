@@ -16,6 +16,9 @@ class Favourite:
 @dataclass
 class Card:
     line: str
+    sens: str
+    platform: str
+    colour: str
     platform_name: str
     destination: str
     departures: list[Departure]
@@ -36,6 +39,9 @@ def build_card(
     here = [d for d in departures if d.platform == platform.id]
     return Card(
         line=line.code,
+        sens=favourite.sens,
+        platform=platform.id,
+        colour=line.colour,
         platform_name=platform.name,
         destination=line.destinations[favourite.sens],
         departures=next_departures(here, line.code, now),

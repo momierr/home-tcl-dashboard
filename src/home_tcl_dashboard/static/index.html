@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mes arr&ecirc;ts</title>
+<!-- "Add to Home screen" in Firefox opens the dashboard full screen, as an app -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#C8001A">
+<link rel="icon" href="icon-192.png">
+<script>
+  // ES5 on purpose: shows JS errors on the tablet, which has no dev tools.
+  function showError(message) {
+    var box = document.getElementById("errors");
+    if (!box) {
+      box = document.createElement("pre");
+      box.id = "errors";
+      box.style.cssText = "position:fixed;bottom:0;left:0;right:0;margin:0;" +
+        "padding:8px;background:#8B0000;color:#fff;font-size:14px;z-index:9";
+      document.documentElement.appendChild(box);
+    }
+    box.textContent += message + "\n" + navigator.userAgent + "\n";
+  }
+  window.onerror = function (message, source, line) {
+    showError(message + " (" + source + ":" + line + ")");
+  };
+  window.addEventListener("unhandledrejection", function (event) {
+    showError("Promise: " + event.reason);
+  });
+</script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main id="app">Chargement...</main>
+<script src="app.js"></script>
+</body>
+</html>

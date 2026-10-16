@@ -2,6 +2,7 @@ import csv
 import datetime as dt
 import io
 import os
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,10 @@ from dotenv import load_dotenv
 WFS_URL = "https://data.grandlyon.com/geoserver/sytral/ows"
 GTFS_URL = "https://download.data.grandlyon.com/files/rdata/tcl_sytral.tcltheorique/GTFS_TCL.ZIP"
 BASE = "https://data.grandlyon.com/fr/datapusher/ws/rdata"
+PICTOS_URL = (
+    "https://download.data.grandlyon.com/files/rdata/tcl_sytral.tclpictogrammes/"
+    "Pictogrammes_lignes_complets.zip"
+)
 
 csv.field_size_limit(10**8)
 
@@ -72,3 +77,12 @@ def download_gtfs(path: Path, auth: tuple[str, str]) -> None:
     response.raise_for_status()
     path.parent.mkdir(exist_ok=True)
     path.write_bytes(response.content)
+
+
+def download_pictograms(directory: Path, auth: tuple[str, str]) -> None:
+    """Extract the official line pictograms (A.svg, C9.svg...) into `directory`, once."""
+    if directory.exists():
+        return
+    response = requests.get(PICTOS_URL, auth=auth, timeout=60)
+    response.raise_for_status()
+    zipfile.ZipFile(io.BytesIO(response.content)).extractall(directory)
