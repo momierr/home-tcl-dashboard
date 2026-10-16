@@ -111,39 +111,45 @@ def test_board_returns_one_card_per_favourite(monkeypatch):
     monkeypatch.setattr(app_module, "load_scheduled_departures", lambda lines: [])
     monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
     monkeypatch.setattr(app_module, "fetch_passages", fake_fetch_passages)
+    monkeypatch.setattr(app_module, "fetch_alerts", lambda auth: [])
 
     with TestClient(app) as client:
         response = client.get("/api/board")
 
     assert response.status_code == 200
-    assert response.json() == [
-        {
-            "line": "T2",
-            "platform_name": "Perrache",
-            "destination": "Saint-Priest Bel Air",
-            "departures": [
-                {
-                    "line": "T2",
-                    "platform": "32103",
-                    "time": "2099-01-01T08:05:00",
-                    "realtime": True,
-                }
-            ],
-        },
-        {
-            "line": "C9",
-            "platform_name": "Bellecour A. Poncet",
-            "destination": "Hopitaux Est",
-            "departures": [
-                {
-                    "line": "C9",
-                    "platform": "33685",
-                    "time": "2099-01-01T08:10:00",
-                    "realtime": False,
-                }
-            ],
-        },
-    ]
+    assert response.json() == {
+        "cards": [
+            {
+                "line": "T2",
+                "platform_name": "Perrache",
+                "destination": "Saint-Priest Bel Air",
+                "departures": [
+                    {
+                        "line": "T2",
+                        "platform": "32103",
+                        "time": "2099-01-01T08:05:00",
+                        "realtime": True,
+                    }
+                ],
+                "disrupted": False,
+            },
+            {
+                "line": "C9",
+                "platform_name": "Bellecour A. Poncet",
+                "destination": "Hopitaux Est",
+                "departures": [
+                    {
+                        "line": "C9",
+                        "platform": "33685",
+                        "time": "2099-01-01T08:10:00",
+                        "realtime": False,
+                    }
+                ],
+                "disrupted": False,
+            },
+        ],
+        "banner": None,
+    }
     assert requested_ids == ["32103", "33685"]
 
 
@@ -165,12 +171,14 @@ def test_board_uses_the_timetable_for_the_metro(monkeypatch):
         app_module, "load_scheduled_departures", lambda lines: [scheduled]
     )
     monkeypatch.setattr(app_module, "fetch_passages", no_realtime)
+    monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
+    monkeypatch.setattr(app_module, "fetch_alerts", lambda auth: [])
 
     with TestClient(app) as client:
         response = client.get("/api/board")
 
     assert response.status_code == 200
-    assert response.json()[0]["departures"] == [
+    assert response.json()["cards"][0]["departures"] == [
         {
             "line": "A",
             "platform": "30101",

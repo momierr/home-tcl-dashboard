@@ -5,9 +5,11 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 
-from home_tcl_dashboard.board import Card, Favourite, build_card
+from home_tcl_dashboard.alerts import active_alerts, parse_alert
+from home_tcl_dashboard.board import Board, Favourite, build_banner, build_card
 from home_tcl_dashboard.grandlyon import (
     download_gtfs,
+    fetch_alerts,
     fetch_passages,
     fetch_wfs,
     get_auth,
@@ -66,7 +68,7 @@ def health() -> dict[str, str]:
 
 
 @app.get("/api/board")
-def board(request: Request) -> list[Card]:
+def board(request: Request) -> Board:
     """One card per favourite, with its next departures."""
     lines = request.app.state.lines
     departures = list(request.app.state.scheduled)
@@ -80,9 +82,11 @@ def board(request: Request) -> list[Card]:
         passages = latest_estimates(fetch_passages(realtime_ids, get_auth()))
         departures.extend(parse_departure(passage) for passage in passages)
 
-    platforms = request.app.state.platforms
     now = datetime.now()
-    return [
-        build_card(favourite, platforms, lines, departures, now)
+    alerts = active_alerts([parse_alert(row) for row in fetch_alerts(get_auth())], now)
+    platforms = request.app.state.platforms
+    cards = [
+        build_card(favourite, platforms, lines, departures, alerts, now)
         for favourite in FAVOURITES
     ]
+    return Board(cards=cards, banner=build_banner(FAVOURITES, alerts))
