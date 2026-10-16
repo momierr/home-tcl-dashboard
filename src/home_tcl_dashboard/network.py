@@ -2,6 +2,7 @@ import re
 from dataclasses import dataclass, field
 
 PREFIX_ORDER = ["C", "", "N", "A", "T", "TB", "PL", "J"]
+MODES = {"MET": "metro", "FUN": "metro", "TRA": "tram", "BUS": "bus"}
 
 
 @dataclass
@@ -62,3 +63,11 @@ def line_sort_key(code: str, mode: str) -> tuple[int, str, int, str]:
             PREFIX_ORDER.index(prefix) if prefix in PREFIX_ORDER else len(PREFIX_ORDER)
         )
     return rank, prefix, int(number or 0), suffix
+
+
+def lines_of_mode(lines: dict[str, Line], mode: str) -> list[Line]:
+    """The lines of a tab (metro, tram or bus) that have stops, in natural_order."""
+    return sorted(
+        [line for line in lines.values() if MODES[line.mode] == mode and line.stops],
+        key=lambda line: line_sort_key(line.code, mode),
+    )

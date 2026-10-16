@@ -2,6 +2,7 @@ from home_tcl_dashboard.network import (
     Line,
     Platform,
     line_sort_key,
+    lines_of_mode,
     parse_desserte,
     parse_lines,
     parse_platform,
@@ -110,3 +111,16 @@ def test_line_sort_key_numbers_are_natural() -> None:
     result = sorted(codes, key=lambda code: line_sort_key(code, "bus"))
 
     assert result == ["33", "98", "98EX", "102"]
+
+
+def test_lines_of_mode_keeps_the_tab_lines_with_stops_in_order() -> None:
+    lines = {
+        "F1": Line("F1", "FUN", "#992358", stops={"A": ["30212"]}),
+        "A": Line("A", "MET", "#E8308A", stops={"A": ["30101"]}),
+        "C9": Line("C9", "BUS", "#C88817", stops={"A": ["33685"]}),
+        "Z": Line("Z", "MET", "#000000"),
+    }
+
+    tab = lines_of_mode(lines, "metro")
+
+    assert [line.code for line in tab] == ["A", "F1"]
