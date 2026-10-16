@@ -68,11 +68,19 @@ def health() -> dict[str, str]:
 @app.get("/api/board")
 def board(request: Request) -> list[Card]:
     """One card per favourite, with its next departures."""
-    platform_ids = [favourite.platform for favourite in FAVOURITES]
-    passages = latest_estimates(fetch_passages(platform_ids, get_auth()))
-    departures = [parse_departure(passage) for passage in passages]
-    platforms = request.app.state.platforms
     lines = request.app.state.lines
+    departures = list(request.app.state.scheduled)
+    realtime_ids = [
+        favourite.platform
+        for favourite in FAVOURITES
+        if lines[favourite.line].mode not in SCHEDULED_MODES
+    ]
+
+    if realtime_ids:
+        passages = latest_estimates(fetch_passages(realtime_ids, get_auth()))
+        departures.extend(parse_departure(passage) for passage in passages)
+
+    platforms = request.app.state.platforms
     now = datetime.now()
     return [
         build_card(favourite, platforms, lines, departures, now)

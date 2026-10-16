@@ -1,8 +1,12 @@
+from datetime import datetime
+
 from fastapi.testclient import TestClient
 
 from home_tcl_dashboard import app as app_module
 from home_tcl_dashboard.app import app
+from home_tcl_dashboard.board import Favourite
 from home_tcl_dashboard.network import Line, Platform
+from home_tcl_dashboard.realtime import Departure
 
 client = TestClient(app)
 
@@ -141,3 +145,36 @@ def test_board_returns_one_card_per_favourite(monkeypatch):
         },
     ]
     assert requested_ids == ["32103", "33685"]
+
+
+def test_board_uses_the_timetable_for_the_metro(monkeypatch):
+    platforms = {
+        "30101": Platform(id="30101", name="Perrache", line_directions={("A", "A")})
+    }
+    lines = {"A": Line("A", "MET", "#E8308A", {"A": "Vaulx-en-Velin La Soie"})}
+    scheduled = Departure("A", "30101", datetime(2099, 1, 1, 8, 5), realtime=False)
+
+    def no_realtime(platform_ids, auth):
+        raise AssertionError("the metro must not ask for real-time data")
+
+    monkeypatch.setattr(
+        app_module, "FAVOURITES", [Favourite(line="A", sens="A", platform="30101")]
+    )
+    monkeypatch.setattr(app_module, "load_network", lambda: (platforms, lines))
+    monkeypatch.setattr(
+        app_module, "load_scheduled_departures", lambda lines: [scheduled]
+    )
+    monkeypatch.setattr(app_module, "fetch_passages", no_realtime)
+
+    with TestClient(app) as client:
+        response = client.get("/api/board")
+
+    assert response.status_code == 200
+    assert response.json()[0]["departures"] == [
+        {
+            "line": "A",
+            "platform": "30101",
+            "time": "2099-01-01T08:05:00",
+            "realtime": False,
+        }
+    ]
