@@ -54,23 +54,24 @@ def read_csv(archive: zipfile.ZipFile, name: str) -> Iterator[dict[str, str]]:
         yield from csv.DictReader(io.TextIOWrapper(raw, encoding="utf-8"))
 
 
-def build_departures(path: Path, day: date, lines: set[str]) -> list[Departure]:
-    """Scheduled departures of `lines` for the service day `day`."""
+def build_departures(path: Path, days: list[date], lines: set[str]) -> list[Departure]:
+    """Scheduled departures of `lines` for these service days."""
     with zipfile.ZipFile(path) as archive:
-        services = active_services(
-            read_csv(archive, "calendar.txt"),
-            read_csv(archive, "calendar_dates.txt"),
-            day,
-        )
-        trip_lines = {
-            row["trip_id"]: row["route_id"]
-            for row in read_csv(archive, "trips.txt")
-            if row["service_id"] in services and row["route_id"] in lines
-        }
+        calendar = list(read_csv(archive, "calendar.txt"))
+        calendar_dates = list(read_csv(archive, "calendar_dates.txt"))
+        services = {day: active_services(calendar, calendar_dates, day) for day in days}
+        trips: dict[str, tuple[str, list[date]]] = {}
+        for row in read_csv(archive, "trips.txt"):
+            running = [day for day in days if row["service_id"] in services[day]]
+            if row["route_id"] in lines and running:
+                trips[row["trip_id"]] = (row["route_id"], running)
         departures = []
         for row in read_csv(archive, "stop_times.txt"):
-            line = trip_lines.get(row["trip_id"])
-            if line is not None:
+            trip = trips.get(row["trip_id"])
+            if trip is None:
+                continue
+            line, running = trip
+            for day in running:
                 departures.append(
                     Departure(
                         line=line,

@@ -1,11 +1,13 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
+import requests
 from fastapi import FastAPI, HTTPException, Request
+from starlette.datastructures import State
 
 from home_tcl_dashboard.alerts import active_alerts, parse_alert
 from home_tcl_dashboard.board import Board, Favourite, build_banner, build_card
@@ -61,12 +63,29 @@ def load_network() -> tuple[dict[str, Platform], dict[str, Line]]:
     return platforms, lines
 
 
-def load_scheduled_departures(lines: dict[str, Line]) -> list[Departure]:
-    download_gtfs(GTFS_PATH, auth=get_auth())
+def load_scheduled_departures(lines: dict[str, Line], today: date) -> list[Departure]:
+    """GTFS departures of the metro and funicular, for yesterday's and today's service.
+
+    Yesterday's service runs past midnight (its last metros leave at 24:xx).
+    """
+    try:
+        download_gtfs(GTFS_PATH, auth=get_auth())
+    except requests.RequestException:
+        if not GTFS_PATH.exists():
+            raise
+        # Grand Lyon is down: keep using the timetable we already have
     scheduled_lines = {
         line.code for line in lines.values() if line.mode in SCHEDULED_MODES
     }
-    return build_departures(GTFS_PATH, date.today(), scheduled_lines)
+    days = [today - timedelta(days=1), today]
+    return build_departures(GTFS_PATH, days, scheduled_lines)
+
+
+def refresh_timetable(state: State, today: date) -> None:
+    """Rebuild the scheduled departures when the day changes."""
+    if state.scheduled_for != today:
+        state.scheduled = load_scheduled_departures(state.lines, today)
+        state.scheduled_for = today
 
 
 def load_stop_orders(lines: dict[str, Line]) -> None:
@@ -79,7 +98,8 @@ def load_stop_orders(lines: dict[str, Line]) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.platforms, app.state.lines = load_network()
-    app.state.scheduled = load_scheduled_departures(app.state.lines)
+    app.state.scheduled_for = None
+    refresh_timetable(app.state, date.today())
     load_stop_orders(app.state.lines)
     app.state.passages = LastGood()
     app.state.alerts = LastGood()
@@ -156,6 +176,7 @@ def current_departures(
 ) -> tuple[list[Departure], bool]:
     """GTFS departures plus real-time ones for these favourites, and if stale."""
     lines = request.app.state.lines
+    refresh_timetable(request.app.state, now.date())
     departures = list(request.app.state.scheduled)
     realtime_ids = [
         favourite.platform

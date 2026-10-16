@@ -105,7 +105,7 @@ def test_build_departures_keeps_running_trips_of_the_lines(tmp_path: Path) -> No
         },
     )
 
-    departures = build_departures(path, SUNDAY, {"A"})
+    departures = build_departures(path, [SUNDAY], {"A"})
 
     assert departures == [
         Departure("A", "30101", datetime(2026, 10, 11, 18, 2), realtime=False),
@@ -139,3 +139,31 @@ def test_stop_orders_keeps_the_longest_trip_of_each_direction(tmp_path: Path) ->
         ("C9", "A"): ["a", "b", "c"],
         ("C9", "R"): ["c", "a"],
     }
+
+
+def test_build_departures_keeps_last_night_trips_after_midnight(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "gtfs.zip"
+    days = ",".join(WEEKDAYS)
+    write_gtfs(
+        path,
+        {
+            "calendar.txt": f"service_id,{days},start_date,end_date\n"
+            "sun,0,0,0,0,0,0,1,20260101,20261231\n"
+            "mon,1,0,0,0,0,0,0,20260101,20261231\n",
+            "calendar_dates.txt": "service_id,date,exception_type\n",
+            "trips.txt": "route_id,service_id,trip_id\nA,sun,late\nA,mon,early\n",
+            "stop_times.txt": "trip_id,departure_time,stop_id\n"
+            "late,24:30:00,30101\n"
+            "early,05:00:00,30101\n",
+        },
+    )
+    monday = date(2026, 10, 12)
+
+    departures = build_departures(path, [SUNDAY, monday], {"A"})
+
+    assert departures == [
+        Departure("A", "30101", datetime(2026, 10, 12, 0, 30), realtime=False),
+        Departure("A", "30101", datetime(2026, 10, 12, 5, 0), realtime=False),
+    ]

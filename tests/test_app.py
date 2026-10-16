@@ -1,8 +1,9 @@
-from datetime import datetime
+from datetime import date, datetime
 
 import pytest
 import requests
 from fastapi.testclient import TestClient
+from starlette.datastructures import State
 
 from home_tcl_dashboard import app as app_module
 from home_tcl_dashboard.app import app
@@ -115,7 +116,9 @@ def test_board_returns_one_card_per_favourite(monkeypatch):
     monkeypatch.setattr(
         app_module, "load_network", lambda: (FAKE_PLATFORMS, FAKE_LINES)
     )
-    monkeypatch.setattr(app_module, "load_scheduled_departures", lambda lines: [])
+    monkeypatch.setattr(
+        app_module, "load_scheduled_departures", lambda lines, today: []
+    )
     monkeypatch.setattr(app_module, "load_stop_orders", lambda lines: None)
     monkeypatch.setattr(app_module, "load_favourites", lambda path: FAKE_FAVOURITES)
     monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
@@ -182,7 +185,7 @@ def test_board_uses_the_timetable_for_the_metro(monkeypatch):
     )
     monkeypatch.setattr(app_module, "load_network", lambda: (platforms, lines))
     monkeypatch.setattr(
-        app_module, "load_scheduled_departures", lambda lines: [scheduled]
+        app_module, "load_scheduled_departures", lambda lines, today: [scheduled]
     )
     monkeypatch.setattr(app_module, "load_stop_orders", lambda lines: None)
     monkeypatch.setattr(app_module, "fetch_passages", no_realtime)
@@ -218,7 +221,9 @@ def test_board_serves_stale_data_when_grand_lyon_is_down(monkeypatch):
     monkeypatch.setattr(
         app_module, "load_network", lambda: (FAKE_PLATFORMS, FAKE_LINES)
     )
-    monkeypatch.setattr(app_module, "load_scheduled_departures", lambda lines: [])
+    monkeypatch.setattr(
+        app_module, "load_scheduled_departures", lambda lines, today: []
+    )
     monkeypatch.setattr(app_module, "load_stop_orders", lambda lines: None)
     monkeypatch.setattr(app_module, "load_favourites", lambda path: FAKE_FAVOURITES)
     monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
@@ -240,7 +245,9 @@ def start_without_network(monkeypatch, favourites_path):
     monkeypatch.setattr(
         app_module, "load_network", lambda: (FAKE_PLATFORMS, FAKE_LINES)
     )
-    monkeypatch.setattr(app_module, "load_scheduled_departures", lambda lines: [])
+    monkeypatch.setattr(
+        app_module, "load_scheduled_departures", lambda lines, today: []
+    )
     monkeypatch.setattr(app_module, "load_stop_orders", lambda lines: None)
     monkeypatch.setattr(app_module, "FAV_PATH", favourites_path)
 
@@ -413,3 +420,44 @@ def test_stop_detail_refuses_an_unknown_stop(monkeypatch, tmp_path):
         response = client.get("/api/stops/32103/T2/R")
 
     assert response.status_code == 404
+
+
+def test_refresh_timetable_rebuilds_once_a_day(monkeypatch):
+    built_for = []
+
+    def fake_load(lines, today):
+        built_for.append(today)
+        return []
+
+    monkeypatch.setattr(app_module, "load_scheduled_departures", fake_load)
+    state = State({"lines": {}, "scheduled_for": None})
+
+    app_module.refresh_timetable(state, date(2026, 10, 16))
+    app_module.refresh_timetable(state, date(2026, 10, 16))
+    app_module.refresh_timetable(state, date(2026, 10, 17))
+
+    assert built_for == [date(2026, 10, 16), date(2026, 10, 17)]
+
+
+def test_load_scheduled_departures_keeps_the_old_file_when_download_fails(
+    monkeypatch, tmp_path
+):
+    path = tmp_path / "gtfs.zip"
+    path.write_bytes(b"yesterday's timetable")
+    built_from = []
+
+    def down(path, auth):
+        raise requests.ConnectionError()
+
+    def fake_build(path, days, lines):
+        built_from.append((path, days))
+        return []
+
+    monkeypatch.setattr(app_module, "GTFS_PATH", path)
+    monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
+    monkeypatch.setattr(app_module, "download_gtfs", down)
+    monkeypatch.setattr(app_module, "build_departures", fake_build)
+
+    app_module.load_scheduled_departures({}, date(2026, 10, 16))
+
+    assert built_from == [(path, [date(2026, 10, 15), date(2026, 10, 16)])]
