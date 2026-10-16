@@ -58,3 +58,85 @@ def test_load_network_indexes_platforms_and_lines(monkeypatch):
         "T2": Line("T2", "TRA", "#6BA230", {"A": "Saint-Priest Bel Air"}),
         "C9": Line("C9", "BUS", "#C88817", {"A": "Hopitaux Est"}),
     }
+
+
+FAKE_PLATFORMS = {
+    "32103": Platform(
+        id="32103", name="Perrache", line_directions={("T1", "A"), ("T2", "A")}
+    ),
+    "33685": Platform(
+        id="33685", name="Bellecour A. Poncet", line_directions={("C9", "A")}
+    ),
+}
+
+FAKE_LINES = {
+    "T2": Line("T2", "TRA", "#6BA230", {"A": "Saint-Priest Bel Air"}),
+    "C9": Line("C9", "BUS", "#C88817", {"A": "Hopitaux Est"}),
+}
+
+FAKE_PASSAGES = [
+    {
+        "id": "32103",
+        "ligne": "T2",
+        "heurepassage": "2099-01-01 08:05:00",
+        "type": "E",
+        "coursetheorique": "trip-t2",
+        "last_update_fme": "2099-01-01 08:00:00",
+    },
+    {
+        "id": "33685",
+        "ligne": "C9",
+        "heurepassage": "2099-01-01 08:10:00",
+        "type": "T",
+        "coursetheorique": "trip-c9",
+        "last_update_fme": "2099-01-01 08:00:00",
+    },
+]
+
+
+def test_board_returns_one_card_per_favourite(monkeypatch):
+    requested_ids = []
+
+    def fake_fetch_passages(platform_ids, auth):
+        requested_ids.extend(platform_ids)
+        return FAKE_PASSAGES
+
+    monkeypatch.setattr(
+        app_module, "load_network", lambda: (FAKE_PLATFORMS, FAKE_LINES)
+    )
+    monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
+    monkeypatch.setattr(app_module, "fetch_passages", fake_fetch_passages)
+
+    with TestClient(app) as client:
+        response = client.get("/api/board")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "line": "T2",
+            "platform_name": "Perrache",
+            "destination": "Saint-Priest Bel Air",
+            "departures": [
+                {
+                    "line": "T2",
+                    "platform": "32103",
+                    "time": "2099-01-01T08:05:00",
+                    "realtime": True,
+                }
+            ],
+        },
+        {
+            "line": "C9",
+            "platform_name": "Bellecour A. Poncet",
+            "destination": "Hopitaux Est",
+            "departures": [
+                {
+                    "line": "C9",
+                    "platform": "33685",
+                    "time": "2099-01-01T08:10:00",
+                    "realtime": False,
+                }
+            ],
+        },
+    ]
+    assert requested_ids == ["32103", "33685"]
