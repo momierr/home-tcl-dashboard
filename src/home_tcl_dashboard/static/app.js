@@ -32,6 +32,7 @@ let data = null; // the last answer for the current screen
 let theme = remembered("theme") || "auto"; // "auto" (by the hour), "day" or "night"
 let reachable = true; // false when our own server does not answer
 let clockOffset = 0; // server time minus tablet time, in ms
+let renderedHash = null; // the screen drawn last, to keep its scroll on a redraw
 
 // ---------------------------------------------------------------- scaling
 
@@ -136,6 +137,7 @@ const ICONS = {
   auto: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/>',
   expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   map: '<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/>',
+  swap: '<path d="m16 3 4 4-4 4M20 7H4M8 21l-4-4 4-4M4 17h16"/>',
   star: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3z"/>',
 };
 
@@ -162,10 +164,12 @@ function withIcon(className, name, text) {
   return node;
 }
 
-// Where departures come from: the metro has only the timetable.
-function sourceLabel(departures) {
-  const realtime = departures.length > 0 && departures[0].realtime;
-  return realtime ? withIcon("", "realtime", "Temps r\u00e9el") : withIcon("", "clock", "Horaire pr\u00e9vu");
+// A departure time, with where it comes from: live (green waves) or the timetable (clock).
+function departureTime(departure) {
+  const live = departure.realtime;
+  const node = withIcon(live ? "time live" : "time", live ? "realtime" : "clock", clock(parseTime(departure.time)));
+  node.title = live ? "Temps r\u00e9el" : "Horaire pr\u00e9vu";
+  return node;
 }
 
 function button(className, text, onclick) {
@@ -190,6 +194,19 @@ function lineBadge(code, colour, size) {
   img.style.height = size / 16 + "rem";
   img.onerror = () => img.replaceWith(badge);
   return img;
+}
+
+// One button for the direction: it shows where the line goes, a tap turns it around.
+function directionButton(line, sens, choose) {
+  const other = Object.keys(line.destinations).filter((s) => s !== sens)[0];
+  const node = button("choice direction with-icon", "", () => choose(other));
+  if (other) {
+    node.appendChild(icon("swap", 22));
+  } else {
+    node.disabled = true; // a loop line: a single direction
+  }
+  node.appendChild(el("span", "", "vers " + line.destinations[sens]));
+  return node;
 }
 
 function backButton(text) {
@@ -285,6 +302,7 @@ function render() {
     return; // still "Chargement..."
   }
   const app = document.getElementById("app");
+  const scrolls = location.hash === renderedHash ? scrollPositions(app) : null;
   app.innerHTML = ""; // clearing is fine; data always goes through textContent
   const screen = route();
   if (screen.name === "home") {
@@ -298,6 +316,27 @@ function render() {
   } else {
     renderEdit(app);
   }
+  if (scrolls) {
+    restoreScrolls(app, scrolls);
+  }
+  renderedHash = location.hash;
+}
+
+// Redrawing empties the page, which scrolls it back to the top: remember where
+// the page and its scrolling boxes were, to put them back after the redraw.
+const SCROLLERS = ".panel, .stops, .choices, .browse-lines, .alerts";
+
+function scrollPositions(app) {
+  const boxes = [];
+  app.querySelectorAll(SCROLLERS).forEach((box) => boxes.push(box.scrollTop));
+  return { page: window.pageYOffset, boxes: boxes };
+}
+
+function restoreScrolls(app, scrolls) {
+  app.querySelectorAll(SCROLLERS).forEach((box, i) => {
+    box.scrollTop = scrolls.boxes[i] || 0;
+  });
+  window.scrollTo(0, scrolls.page);
 }
 
 // ---------------------------------------------------------------- home
@@ -351,7 +390,7 @@ function renderHome(app, now) {
   if (data.banner) {
     const banner = button("banner", "", () => go("#/alerts"));
     banner.appendChild(icon("warning", 22));
-    banner.appendChild(el("strong", "", data.banner.line));
+    banner.appendChild(lineBadge(data.banner.line, "", 24));
     banner.appendChild(el("span", "banner-title", data.banner.title));
     const count = data.banner.count === 1 ? "1 alerte" : data.banner.count + " alertes";
     banner.appendChild(el("strong", "", count));
@@ -411,8 +450,7 @@ function renderCard(card, now) {
   node.appendChild(countdowns);
 
   const bottom = el("div", "card-bottom");
-  bottom.appendChild(sourceLabel(upcoming));
-  bottom.appendChild(el("span", "", upcoming.map((d) => clock(parseTime(d.time))).join("  ")));
+  upcoming.forEach((d) => bottom.appendChild(departureTime(d)));
   node.appendChild(bottom);
   return node;
 }
@@ -444,8 +482,6 @@ function renderStop(app, screen, now) {
   const offline = data.stale || !reachable;
   if (offline) {
     leftHead.appendChild(withIcon("source offline-text", "clock", "Hors ligne"));
-  } else if (upcomingOf(now).length > 0) {
-    leftHead.appendChild(sourceLabel(upcomingOf(now)));
   }
   left.appendChild(leftHead);
   const upcoming = upcomingOf(now);
@@ -455,7 +491,7 @@ function renderStop(app, screen, now) {
   upcoming.forEach((d, i) => {
     const row = el("div", i === 0 ? "row first" : "row");
     row.appendChild(el("span", "", countdown(minutesUntil(d, now))));
-    row.appendChild(el("span", "muted", clock(parseTime(d.time))));
+    row.appendChild(departureTime(d));
     left.appendChild(row);
   });
   body.appendChild(left);
@@ -608,7 +644,7 @@ function renderAddStop() {
   const panel = el("section", "panel wide");
   panel.appendChild(el("h2", "", "Ajouter un arr\u00eat"));
 
-  panel.appendChild(el("div", "step", "1 \u00b7 Mode"));
+  panel.appendChild(el("div", "step", "Mode"));
   const modes = el("div", "choices");
   MODES.forEach(([mode, label]) => {
     modes.appendChild(button(pick.mode === mode ? "choice on" : "choice", label, () => chooseMode(mode)));
@@ -616,7 +652,7 @@ function renderAddStop() {
   panel.appendChild(modes);
 
   if (pick.mode) {
-    panel.appendChild(el("div", "step", "2 \u00b7 Ligne"));
+    panel.appendChild(el("div", "step", "Ligne"));
     const lines = el("div", "choices wrap");
     pick.lines.forEach((line) => {
       const node = button(pick.line === line ? "choice on" : "choice", "", () => chooseLine(line));
@@ -626,18 +662,13 @@ function renderAddStop() {
     panel.appendChild(lines);
   }
 
-  if (pick.line) {
-    panel.appendChild(el("div", "step", "3 \u00b7 Direction"));
-    const directions = el("div", "choices");
-    Object.keys(pick.line.destinations).sort().forEach((sens) => {
-      const label = "vers " + pick.line.destinations[sens];
-      directions.appendChild(button(pick.sens === sens ? "choice on" : "choice", label, () => chooseSens(sens)));
-    });
-    panel.appendChild(directions);
+  if (pick.sens) {
+    panel.appendChild(el("div", "step", "Direction"));
+    panel.appendChild(directionButton(pick.line, pick.sens, chooseSens));
   }
 
   if (pick.sens) {
-    panel.appendChild(el("div", "step", "4 \u00b7 Arr\u00eat"));
+    panel.appendChild(el("div", "step", "Arr\u00eat"));
     const stops = el("div", "stops");
     const onHome = data.favourites.filter((f) => f.line === pick.line.code && f.sens === pick.sens);
     pick.stops.forEach((stop) => {
@@ -673,7 +704,7 @@ async function chooseMode(mode) {
 
 function chooseLine(line) {
   Object.assign(pick, { line: line, sens: null, stops: [], platform: null });
-  render();
+  chooseSens(Object.keys(line.destinations).sort()[0]);
 }
 
 async function chooseSens(sens) {
@@ -748,13 +779,8 @@ function renderBrowse(app) {
     });
     left.appendChild(lines);
   }
-  if (browse.line) {
-    const directions = el("div", "choices");
-    Object.keys(browse.line.destinations).sort().forEach((sens) => {
-      const label = "vers " + browse.line.destinations[sens];
-      directions.appendChild(button(browse.sens === sens ? "choice on" : "choice", label, () => browseSens(sens)));
-    });
-    left.appendChild(directions);
+  if (browse.sens) {
+    left.appendChild(directionButton(browse.line, browse.sens, browseSens));
   }
   if (browse.map) {
     const stops = el("ol", "timeline browse-stops");
@@ -823,14 +849,10 @@ function renderBrowseDetail() {
     const tile = el("div", "tile");
     tile.style.borderLeftColor = browse.line.colour;
     tile.appendChild(el("div", "tile-wait", countdown(minutesUntil(d, now))));
-    tile.appendChild(el("div", "muted", clock(parseTime(d.time))));
+    tile.appendChild(departureTime(d));
     tiles.appendChild(tile);
   });
   box.appendChild(tiles);
-  const realtime = upcoming[0].realtime;
-  const source = withIcon(realtime ? "live" : "muted", realtime ? "realtime" : "clock",
-    realtime ? "Temps r\u00e9el" : "Horaire pr\u00e9vu");
-  box.appendChild(source);
   return box;
 }
 
