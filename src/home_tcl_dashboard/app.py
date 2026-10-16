@@ -1,22 +1,32 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import date, datetime
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 
 from home_tcl_dashboard.board import Card, Favourite, build_card
-from home_tcl_dashboard.grandlyon import fetch_passages, fetch_wfs, get_auth
+from home_tcl_dashboard.grandlyon import (
+    download_gtfs,
+    fetch_passages,
+    fetch_wfs,
+    get_auth,
+)
+from home_tcl_dashboard.gtfs import build_departures
 from home_tcl_dashboard.network import Line, Platform, parse_lines, parse_platform
-from home_tcl_dashboard.realtime import latest_estimates, parse_departure
+from home_tcl_dashboard.realtime import Departure, latest_estimates, parse_departure
 
 LINE_LAYERS = ["tcllignemf_2_0_0", "tcllignetram_2_0_0", "tcllignebus_2_0_0"]
 LINE_PROPERTIES = "code_ligne,sens,nom_destination,famille_transport,couleur_hex"
 REGULAR_TRACES = "type_trace='NOM' AND code_type_ligne='REG'"
+SCHEDULED_MODES = {"MET", "FUN"}
 
 FAVOURITES = [
     Favourite(line="T2", sens="A", platform="32103"),  # Perrache
     Favourite(line="C9", sens="A", platform="33685"),  # Bellecour A. Poncet
 ]
+
+GTFS_PATH = Path("data/GTFS_TCL.ZIP")
 
 
 def load_network() -> tuple[dict[str, Platform], dict[str, Line]]:
@@ -32,9 +42,18 @@ def load_network() -> tuple[dict[str, Platform], dict[str, Line]]:
     return platforms, lines
 
 
+def load_scheduled_departures(lines: dict[str, Line]) -> list[Departure]:
+    download_gtfs(GTFS_PATH, auth=get_auth())
+    scheduled_lines = {
+        line.code for line in lines.values() if line.mode in SCHEDULED_MODES
+    }
+    return build_departures(GTFS_PATH, date.today(), scheduled_lines)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.platforms, app.state.lines = load_network()
+    app.state.scheduled = load_scheduled_departures(app.state.lines)
     yield
 
 

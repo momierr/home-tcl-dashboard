@@ -104,6 +104,7 @@ def test_board_returns_one_card_per_favourite(monkeypatch):
     monkeypatch.setattr(
         app_module, "load_network", lambda: (FAKE_PLATFORMS, FAKE_LINES)
     )
+    monkeypatch.setattr(app_module, "load_scheduled_departures", lambda lines: [])
     monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
     monkeypatch.setattr(app_module, "fetch_passages", fake_fetch_passages)
 
