@@ -1,9 +1,11 @@
 from home_tcl_dashboard.network import (
     Line,
     Platform,
+    order_platforms,
     parse_desserte,
     parse_lines,
     parse_platform,
+    parse_points,
 )
 
 
@@ -74,3 +76,33 @@ def test_parse_lines_keeps_first_trace_of_a_direction():
     ]
 
     assert parse_lines(rows)["43"].destinations == {"A": "First"}
+
+
+def test_parse_points_point() -> None:
+    assert parse_points("POINT (45.75 4.83)") == [(45.75, 4.83)]
+
+
+def test_parse_points_multilinestring_with_negative_values() -> None:
+    wkt = "MULTILINESTRING ((45.7 -4.8, 45.8 -4.9), (46 5))"
+
+    assert parse_points(wkt) == [(45.7, -4.8), (45.8, -4.9), (46.0, 5.0)]
+
+
+def test_order_platforms_follows_the_trace() -> None:
+    trace = [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (3.0, 0.0)]
+    positions = {
+        "third": (2.1, 0.1),
+        "first": (0.1, -0.1),
+        "second": (0.9, 0.2),
+    }
+
+    assert order_platforms(trace, positions) == ["first", "second", "third"]
+
+
+def test_order_platforms_follows_the_direction_of_the_trace() -> None:
+    there = [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)]
+    back = list(reversed(there))
+    positions = {"start": (0.0, 0.0), "end": (2.0, 0.0)}
+
+    assert order_platforms(there, positions) == ["start", "end"]
+    assert order_platforms(back, positions) == ["end", "start"]
