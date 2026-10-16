@@ -73,59 +73,10 @@ Le premier démarrage télécharge l'horaire et les pictogrammes, il prend donc
 un moment. Si Grand Lyon est en panne ensuite, le serveur continue avec ce
 qu'il a déjà.
 
-## La tablette
-
-La cible est une vieille tablette Android avec **Firefox 68**. Ouvrez
-`http://<serveur>:8000`, puis « Ajouter à l'écran d'accueil » pour avoir une
-application en plein écran. L'affichage s'adapte à toutes les tailles
-(conçu pour 1024x768, avec une mise en page portrait) et passe en thème nuit
-de 20h à 7h.
-
-À cause de Firefox 68, le frontend (`src/home_tcl_dashboard/static/`) est
-en JavaScript simple, sans étape de compilation, et évite la syntaxe et les
-API récentes : pas de `?.`, `??`, `replaceChildren`, `:has()`, ni de CSS
-`min()`/`clamp()`.
-
-## Développement
-
-Le projet utilise [pixi](https://pixi.sh). Depuis la racine du dépôt :
-
-```sh
-pixi install
-cp .env.example .env   # puis remplir GDL_USER et GDL_PWD
-pixi run serve         # http://localhost:8000, rechargé à chaque modification
-pixi run test          # pytest
-pixi run lint          # ruff check
-pixi run format-check  # ruff format --check
-pixi run typecheck     # mypy
-pre-commit install     # lance ruff à chaque commit
-```
-
-Organisation de `src/home_tcl_dashboard/` :
-
-| Module          | Rôle                                                       |
-|-----------------|------------------------------------------------------------|
-| `app.py`        | l'application FastAPI : démarrage, routes `/api/*` (une ligne chacune), fichiers statiques |
-| `dashboard.py`  | la classe `Dashboard` : l'état (réseau, horaire, caches, favoris) et ce que montre chaque écran |
-| `grandlyon.py`  | la classe `GrandLyon` : le client de data.grandlyon.com (WFS, temps réel, alertes, GTFS, pictogrammes) |
-| `network.py`    | lignes, quais, tracés et leur lecture                      |
-| `gtfs.py`       | départs prévus et ordre des arrêts, tirés du GTFS          |
-| `realtime.py`   | départs en temps réel                                      |
-| `alerts.py`     | alertes trafic                                             |
-| `board.py`      | les cartes et le bandeau de l'accueil                      |
-| `cache.py`      | réutilise les réponses récentes de Grand Lyon, et les sert en cas de panne |
-| `favourites.py` | lecture, écriture et validation des favoris                |
-| `static/`       | le frontend                                                |
-
-Trois couches :
-
-- `app.py` ne parle que HTTP : il traduit les requêtes en appels au
-  `Dashboard`, et ses exceptions (`NotFound`, `InvalidFavourites`) en
-  erreurs 404 et 422.
-- `Dashboard` ne connaît pas HTTP. Il reçoit l'heure (`now`) et le client
-  Grand Lyon en paramètres, ce qui permet de le tester sans serveur ni
-  réseau, avec un faux client (`tests/fakes.py`).
-- Les autres modules sont des fonctions pures, que le `Dashboard` appelle.
+Ouvrez ensuite `http://<serveur>:8000` sur n'importe quel appareil du
+réseau. Sur une tablette ou un téléphone, « Ajouter à l'écran d'accueil »
+l'ouvre en plein écran, comme une application. L'affichage s'adapte à la
+taille de l'écran et passe en thème nuit de 20h à 7h.
 
 ## Crédits
 
