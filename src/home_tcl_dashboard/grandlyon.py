@@ -3,6 +3,7 @@ import datetime as dt
 import io
 import os
 from pathlib import Path
+from typing import Any
 
 import requests
 from dotenv import load_dotenv
@@ -51,6 +52,17 @@ def fetch_passages(platform_ids: list[str], auth: tuple[str, str]) -> list[dict]
     for p in passages:
         p["id"] = str(p["id"])
     return passages
+
+
+def fetch_alerts(auth: tuple[str, str]) -> list[dict[str, Any]]:
+    response = requests.get(
+        f"{BASE}/tcl_sytral.tclalertetrafic_2/all.json",
+        params={"compact": "false"},
+        auth=auth,
+        timeout=10,
+    )
+    response.raise_for_status()
+    return response.json()["values"]
 
 
 def download_gtfs(path: Path, auth: tuple[str, str]) -> None:

@@ -3,7 +3,12 @@ import time
 
 import requests
 
-from home_tcl_dashboard.grandlyon import download_gtfs, fetch_passages, fetch_wfs
+from home_tcl_dashboard.grandlyon import (
+    download_gtfs,
+    fetch_alerts,
+    fetch_passages,
+    fetch_wfs,
+)
 
 DUMMY_CSV = """id,nom,desserte
 30101,Perrache,A:A
@@ -134,3 +139,27 @@ def test_download_gtfs_fetches_again_the_next_day(tmp_path, monkeypatch):
     download_gtfs(path, ("user", "pwd"))
 
     assert path.read_bytes() == b"new zip"
+
+
+class FakeAlertsResponse:
+    def raise_for_status(self) -> None:
+        pass
+
+    def json(self):
+        return {"values": [{"ligne_cli": "D", "niveauseverite": 20}]}
+
+
+def test_fetch_alerts_returns_values(monkeypatch):
+    calls = []
+
+    def fake_get(url, params, auth, timeout):
+        calls.append({"url": url, "auth": auth})
+        return FakeAlertsResponse()
+
+    monkeypatch.setattr(requests, "get", fake_get)
+
+    alerts = fetch_alerts(auth=("user", "pwd"))
+
+    assert alerts == [{"ligne_cli": "D", "niveauseverite": 20}]
+    assert calls[0]["url"].endswith("tcl_sytral.tclalertetrafic_2/all.json")
+    assert calls[0]["auth"] == ("user", "pwd")
