@@ -1,6 +1,5 @@
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Literal
@@ -13,6 +12,20 @@ from starlette.datastructures import State
 from home_tcl_dashboard.alerts import Alert, active_alerts, parse_alert
 from home_tcl_dashboard.board import Board, Favourite, build_banner, build_card
 from home_tcl_dashboard.cache import LastGood
+from home_tcl_dashboard.dashboard import (
+    ALERTS_MAX_AGE,
+    PASSAGES_MAX_AGE,
+    SCHEDULED_MODES,
+    AlertsPage,
+    LineMap,
+    LineSummary,
+    MapStop,
+    StopDetail,
+    StopSummary,
+    load_geometry,
+    load_network,
+    load_pictograms,
+)
 from home_tcl_dashboard.favourites import (
     favourite_errors,
     load_favourites,
@@ -22,13 +35,7 @@ from home_tcl_dashboard.grandlyon import GrandLyon
 from home_tcl_dashboard.gtfs import build_departures, stop_orders
 from home_tcl_dashboard.network import (
     Line,
-    Platform,
-    Point,
     lines_of_mode,
-    parse_lines,
-    parse_platform,
-    parse_points,
-    parse_traces,
     timeline,
 )
 from home_tcl_dashboard.realtime import (
@@ -39,33 +46,10 @@ from home_tcl_dashboard.realtime import (
     parse_departure,
 )
 
-LINE_LAYERS = ["tcllignemf_2_0_0", "tcllignetram_2_0_0", "tcllignebus_2_0_0"]
-LINE_PROPERTIES = "code_ligne,sens,nom_destination,famille_transport,couleur_hex"
-REGULAR_TRACES = "type_trace='NOM' AND code_type_ligne='REG'"
-SCHEDULED_MODES = {"MET", "FUN"}
-# Grand Lyon updates the passages once a minute: asking more often only adds a
-# second of wait to every screen. Alerts change far less often.
-PASSAGES_MAX_AGE = timedelta(seconds=30)
-ALERTS_MAX_AGE = timedelta(minutes=5)
-
-
 GTFS_PATH = Path("data/GTFS_TCL.ZIP")
 STATIC_DIR = Path(__file__).parent / "static"
 FAV_PATH = Path("data/favourites.json")
 PICTOS_DIR = Path("data/pictos")
-
-
-def load_network(client: GrandLyon) -> tuple[dict[str, Platform], dict[str, Line]]:
-    """Platforms by id and lines by code, from the WFS."""
-    platform_rows = client.fetch_wfs("tclarret", "id,nom,desserte")
-    platforms = {row["id"]: parse_platform(row) for row in platform_rows}
-
-    line_rows: list[dict[str, str]] = []
-    for layer in LINE_LAYERS:
-        line_rows.extend(client.fetch_wfs(layer, LINE_PROPERTIES, REGULAR_TRACES))
-    lines = parse_lines(line_rows)
-
-    return platforms, lines
 
 
 def load_scheduled_departures(
@@ -102,31 +86,6 @@ def load_stop_orders(client: GrandLyon, lines: dict[str, Line]) -> None:
         lines[code].stops[sens] = stops
 
 
-def load_geometry(
-    client: GrandLyon,
-) -> tuple[dict[str, Point], dict[tuple[str, str], list[list[Point]]]]:
-    """Platform positions and line traces, for the line map (browse screen)."""
-    positions = {
-        row["id"]: parse_points(row["the_geom"])[0]
-        for row in client.fetch_wfs("tclarret", "id,the_geom")
-        if row["the_geom"]
-    }
-    line_rows = [
-        row
-        for layer in LINE_LAYERS
-        for row in client.fetch_wfs(layer, "code_ligne,sens,the_geom", REGULAR_TRACES)
-    ]
-    return positions, parse_traces(line_rows)
-
-
-def load_pictograms(client: GrandLyon) -> None:
-    """Download the line pictograms once; without them the screens show badges."""
-    try:
-        client.download_pictograms(PICTOS_DIR)
-    except requests.RequestException:
-        pass
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     client = GrandLyon.from_env()
@@ -135,7 +94,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.scheduled_for = None
     refresh_timetable(app.state, date.today())
     load_stop_orders(client, app.state.lines)
-    load_pictograms(client)
+    load_pictograms(client, PICTOS_DIR)
     app.state.positions, app.state.traces = load_geometry(client)
     app.state.passages = LastGood(PASSAGES_MAX_AGE)
     app.state.alerts = LastGood(ALERTS_MAX_AGE)
@@ -181,19 +140,6 @@ def put_favourites(favourites: list[Favourite], request: Request) -> list[Favour
     return favourites
 
 
-@dataclass
-class LineSummary:
-    code: str
-    colour: str
-    destinations: dict[str, str]
-
-
-@dataclass
-class StopSummary:
-    platform: str
-    name: str
-
-
 @app.get("/api/lines")
 def get_lines(
     mode: Literal["metro", "tram", "bus"], request: Request
@@ -218,21 +164,6 @@ def get_stops(
         StopSummary(platform=platform_id, name=platforms[platform_id].name)
         for platform_id in lines[code].stops[sens]
     ]
-
-
-@dataclass
-class MapStop:
-    platform: str
-    name: str
-    lat: float
-    lon: float
-
-
-@dataclass
-class LineMap:
-    colour: str
-    trace: list[list[Point]]
-    stops: list[MapStop]
 
 
 @app.get("/api/lines/{code}/{sens}/map")
@@ -279,20 +210,6 @@ def current_departures(
     return departures, stale
 
 
-@dataclass
-class StopDetail:
-    line: str
-    colour: str
-    platform_name: str
-    destination: str
-    departures: list[Departure]
-    next_stops: list[str]
-    remaining: int
-    favourite: bool
-    now: datetime
-    stale: bool
-
-
 @app.get("/api/stops/{platform}/{line}/{sens}")
 def stop_detail(
     platform: str, line: str, sens: Literal["A", "R"], request: Request
@@ -334,14 +251,6 @@ def current_alerts(request: Request, now: datetime) -> tuple[list[Alert], bool]:
         [parse_alert(row) for row in request.app.state.alerts.rows], now
     )
     return alerts, stale
-
-
-@dataclass
-class AlertsPage:
-    mine: list[Alert]
-    network: list[Alert]
-    updated_at: datetime | None
-    stale: bool
 
 
 @app.get("/api/alerts")

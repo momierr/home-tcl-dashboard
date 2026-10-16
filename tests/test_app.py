@@ -8,6 +8,7 @@ from starlette.datastructures import State
 from home_tcl_dashboard import app as app_module
 from home_tcl_dashboard.app import app
 from home_tcl_dashboard.board import Favourite
+from home_tcl_dashboard.dashboard import REGULAR_TRACES
 from home_tcl_dashboard.favourites import load_favourites, save_favourites
 from home_tcl_dashboard.grandlyon import GrandLyon
 from home_tcl_dashboard.network import Line, Platform
@@ -79,7 +80,7 @@ LINE_ROWS = {
 def fake_fetch_wfs(layer, properties, cql_filter=None):
     if layer == "tclarret":
         return PLATFORM_ROWS
-    assert cql_filter == app_module.REGULAR_TRACES
+    assert cql_filter == REGULAR_TRACES
     return LINE_ROWS[layer]
 
 
@@ -149,7 +150,7 @@ def test_board_returns_one_card_per_favourite(monkeypatch):
         app_module, "load_scheduled_departures", lambda client, lines, today: []
     )
     monkeypatch.setattr(app_module, "load_stop_orders", lambda client, lines: None)
-    monkeypatch.setattr(app_module, "load_pictograms", lambda client: None)
+    monkeypatch.setattr(app_module, "load_pictograms", lambda client, directory: None)
     monkeypatch.setattr(app_module, "load_geometry", lambda client: ({}, {}))
     monkeypatch.setattr(app_module, "load_favourites", lambda path: FAKE_FAVOURITES)
     use_grand_lyon(monkeypatch, passages=fake_fetch_passages)
@@ -225,7 +226,7 @@ def test_board_uses_the_timetable_for_the_metro(monkeypatch):
         lambda client, lines, today: [scheduled],
     )
     monkeypatch.setattr(app_module, "load_stop_orders", lambda client, lines: None)
-    monkeypatch.setattr(app_module, "load_pictograms", lambda client: None)
+    monkeypatch.setattr(app_module, "load_pictograms", lambda client, directory: None)
     monkeypatch.setattr(app_module, "load_geometry", lambda client: ({}, {}))
     use_grand_lyon(monkeypatch, passages=no_realtime)
 
@@ -262,7 +263,7 @@ def test_board_serves_stale_data_when_grand_lyon_is_down(monkeypatch):
         app_module, "load_scheduled_departures", lambda client, lines, today: []
     )
     monkeypatch.setattr(app_module, "load_stop_orders", lambda client, lines: None)
-    monkeypatch.setattr(app_module, "load_pictograms", lambda client: None)
+    monkeypatch.setattr(app_module, "load_pictograms", lambda client, directory: None)
     monkeypatch.setattr(app_module, "load_geometry", lambda client: ({}, {}))
     monkeypatch.setattr(app_module, "load_favourites", lambda path: FAKE_FAVOURITES)
     use_grand_lyon(monkeypatch, passages=flaky_fetch_passages, alerts=down)
@@ -288,7 +289,7 @@ def start_without_network(monkeypatch, favourites_path):
         app_module, "load_scheduled_departures", lambda client, lines, today: []
     )
     monkeypatch.setattr(app_module, "load_stop_orders", lambda client, lines: None)
-    monkeypatch.setattr(app_module, "load_pictograms", lambda client: None)
+    monkeypatch.setattr(app_module, "load_pictograms", lambda client, directory: None)
     monkeypatch.setattr(app_module, "load_geometry", lambda client: ({}, {}))
     monkeypatch.setattr(app_module, "FAV_PATH", favourites_path)
     use_grand_lyon(monkeypatch)
