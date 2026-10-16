@@ -1,6 +1,9 @@
+import os
+import time
+
 import requests
 
-from home_tcl_dashboard.grandlyon import fetch_passages, fetch_wfs
+from home_tcl_dashboard.grandlyon import download_gtfs, fetch_passages, fetch_wfs
 
 DUMMY_CSV = """id,nom,desserte
 30101,Perrache,A:A
@@ -89,3 +92,45 @@ def test_fetch_passages_returns_values_with_string_ids(monkeypatch):
     ]
     assert calls[0]["params"]["id__in"] == "32103,30101"
     assert calls[0]["auth"] == ("user", "pwd")
+
+
+class FakeZipResponse:
+    content = b"new zip"
+
+    def raise_for_status(self) -> None:
+        pass
+
+
+def test_download_gtfs_fetches_when_missing(tmp_path, monkeypatch):
+    path = tmp_path / "data" / "gtfs.zip"
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: FakeZipResponse())
+
+    download_gtfs(path, ("user", "pwd"))
+
+    assert path.read_bytes() == b"new zip"
+
+
+def test_download_gtfs_skips_when_downloaded_today(tmp_path, monkeypatch):
+    path = tmp_path / "gtfs.zip"
+    path.write_bytes(b"old zip")
+
+    def no_network(*args, **kwargs):
+        raise AssertionError("should not download again")
+
+    monkeypatch.setattr(requests, "get", no_network)
+
+    download_gtfs(path, ("user", "pwd"))
+
+    assert path.read_bytes() == b"old zip"
+
+
+def test_download_gtfs_fetches_again_the_next_day(tmp_path, monkeypatch):
+    path = tmp_path / "gtfs.zip"
+    path.write_bytes(b"old zip")
+    yesterday = time.time() - 24 * 3600
+    os.utime(path, (yesterday, yesterday))
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: FakeZipResponse())
+
+    download_gtfs(path, ("user", "pwd"))
+
+    assert path.read_bytes() == b"new zip"

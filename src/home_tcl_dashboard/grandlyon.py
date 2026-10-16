@@ -1,11 +1,14 @@
 import csv
+import datetime as dt
 import io
 import os
+from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
 
 WFS_URL = "https://data.grandlyon.com/geoserver/sytral/ows"
+GTFS_URL = "https://download.data.grandlyon.com/files/rdata/tcl_sytral.tcltheorique/GTFS_TCL.ZIP"
 BASE = "https://data.grandlyon.com/fr/datapusher/ws/rdata"
 
 csv.field_size_limit(10**8)
@@ -48,3 +51,12 @@ def fetch_passages(platform_ids: list[str], auth: tuple[str, str]) -> list[dict]
     for p in passages:
         p["id"] = str(p["id"])
     return passages
+
+
+def download_gtfs(path: Path, auth: tuple[str, str]) -> None:
+    if path.exists() and dt.date.fromtimestamp(path.stat().st_mtime) == dt.date.today():
+        return
+    response = requests.get(GTFS_URL, auth=auth, timeout=120)
+    response.raise_for_status()
+    path.parent.mkdir(exist_ok=True)
+    path.write_bytes(response.content)
