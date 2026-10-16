@@ -231,6 +231,20 @@ button {
 .badge {
   flex-shrink: 0;
 }
+/* Demo only: a badge shaped like the official pictograms, mode on red + line */
+.badge.split {
+  display: inline-flex;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 0.375rem;
+}
+.badge-mode,
+.badge-code {
+  padding: 0.2rem 0.35rem;
+}
+.badge-mode {
+  background: #E2001A;
+}
 .header-right {
   display: flex;
   align-items: center;
