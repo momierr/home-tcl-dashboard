@@ -74,8 +74,9 @@ Organisation de `src/home_tcl_dashboard/` :
 
 | Module          | Rôle                                                       |
 |-----------------|------------------------------------------------------------|
-| `app.py`        | l'application FastAPI : démarrage, routes `/api/*`, fichiers statiques |
-| `grandlyon.py`  | les appels à data.grandlyon.com (WFS, temps réel, GTFS...) |
+| `app.py`        | l'application FastAPI : démarrage, routes `/api/*` (une ligne chacune), fichiers statiques |
+| `dashboard.py`  | la classe `Dashboard` : l'état (réseau, horaire, caches, favoris) et ce que montre chaque écran |
+| `grandlyon.py`  | la classe `GrandLyon` : le client de data.grandlyon.com (WFS, temps réel, alertes, GTFS, pictogrammes) |
 | `network.py`    | lignes, quais, tracés et leur lecture                      |
 | `gtfs.py`       | départs prévus et ordre des arrêts, tirés du GTFS          |
 | `realtime.py`   | départs en temps réel                                      |
@@ -85,9 +86,17 @@ Organisation de `src/home_tcl_dashboard/` :
 | `favourites.py` | lecture, écriture et validation des favoris                |
 | `static/`       | le frontend                                                |
 
-Les modules autres que `app.py` et `grandlyon.py` sont des fonctions pures,
-testées sans réseau. Plus de détails dans
-[docs/architecture.md](docs/architecture.md).
+Trois couches :
+
+- `app.py` ne parle que HTTP : il traduit les requêtes en appels au
+  `Dashboard`, et ses exceptions (`NotFound`, `InvalidFavourites`) en
+  erreurs 404 et 422.
+- `Dashboard` ne connaît pas HTTP. Il reçoit l'heure (`now`) et le client
+  Grand Lyon en paramètres, ce qui permet de le tester sans serveur ni
+  réseau, avec un faux client (`tests/fakes.py`).
+- Les autres modules sont des fonctions pures, que le `Dashboard` appelle.
+
+Plus de détails dans [docs/architecture.md](docs/architecture.md).
 
 ## Crédits
 
