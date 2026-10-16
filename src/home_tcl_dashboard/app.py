@@ -1,7 +1,9 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request
 
@@ -21,7 +23,13 @@ from home_tcl_dashboard.grandlyon import (
     get_auth,
 )
 from home_tcl_dashboard.gtfs import build_departures, stop_orders
-from home_tcl_dashboard.network import Line, Platform, parse_lines, parse_platform
+from home_tcl_dashboard.network import (
+    Line,
+    Platform,
+    lines_of_mode,
+    parse_lines,
+    parse_platform,
+)
 from home_tcl_dashboard.realtime import Departure, latest_estimates, parse_departure
 
 LINE_LAYERS = ["tcllignemf_2_0_0", "tcllignetram_2_0_0", "tcllignebus_2_0_0"]
@@ -96,6 +104,24 @@ def put_favourites(favourites: list[Favourite], request: Request) -> list[Favour
     save_favourites(FAV_PATH, favourites)
     request.app.state.favourites = favourites
     return favourites
+
+
+@dataclass
+class LineSummary:
+    code: str
+    colour: str
+    destinations: dict[str, str]
+
+
+@app.get("/api/lines")
+def get_lines(
+    mode: Literal["metro", "tram", "bus"], request: Request
+) -> list[LineSummary]:
+    """The lines of one tab, in natural order, without their stops."""
+    return [
+        LineSummary(code=line.code, colour=line.colour, destinations=line.destinations)
+        for line in lines_of_mode(request.app.state.lines, mode)
+    ]
 
 
 @app.get("/api/board")

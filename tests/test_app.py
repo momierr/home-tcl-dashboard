@@ -289,3 +289,29 @@ def test_put_favourites_refuses_invalid_ones_and_keeps_the_old(monkeypatch, tmp_
     assert put.json() == {"detail": ["unknown line ZZZ"]}
     assert get.json() == old
     assert load_favourites(path) == [Favourite(line="T2", sens="A", platform="32103")]
+
+
+def test_get_lines_lists_one_tab_without_stops(monkeypatch, tmp_path):
+    lines = {
+        "T2": Line("T2", "TRA", "#6BA230", {"A": "Saint-Priest"}, stops={"A": ["1"]}),
+        "C9": Line("C9", "BUS", "#C88817", {"A": "Hopitaux Est"}, stops={"A": ["2"]}),
+    }
+    start_without_network(monkeypatch, tmp_path / "favourites.json")
+    monkeypatch.setattr(app_module, "load_network", lambda: (FAKE_PLATFORMS, lines))
+
+    with TestClient(app) as client:
+        response = client.get("/api/lines", params={"mode": "tram"})
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {"code": "T2", "colour": "#6BA230", "destinations": {"A": "Saint-Priest"}}
+    ]
+
+
+def test_get_lines_refuses_an_unknown_mode(monkeypatch, tmp_path):
+    start_without_network(monkeypatch, tmp_path / "favourites.json")
+
+    with TestClient(app) as client:
+        response = client.get("/api/lines", params={"mode": "plane"})
+
+    assert response.status_code == 422
