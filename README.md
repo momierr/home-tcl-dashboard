@@ -4,6 +4,12 @@ Un tableau de bord mural des prochains départs TCL (transports en commun de
 Lyon) pour les arrêts que vous utilisez, servi par un serveur à la maison et
 affiché en plein écran sur une tablette.
 
+**[Essayer la démo](https://momierr.github.io/home-tcl-dashboard/)**, sans
+rien installer : des horaires enregistrés un soir de semaine, rejoués en
+direct, et des favoris gardés dans votre navigateur.
+
+![L'accueil : six arrêts favoris au plus, avec leurs prochains départs](https://raw.githubusercontent.com/momierr/home-tcl-dashboard/main/.github/screenshots/home.png)
+
 - **Accueil** : jusqu'à 6 arrêts favoris, avec les comptes à rebours, en
   temps réel ou d'après l'horaire prévu, et un bandeau pour les alertes
   trafic sur vos lignes.
@@ -19,23 +25,43 @@ affiché en plein écran sur une tablette.
 Le métro et le funiculaire n'ont pas de temps réel : leurs départs viennent
 de l'horaire GTFS. Les trams et les bus utilisent le temps réel.
 
+| Détail d'un arrêt | Parcourir les lignes |
+|---|---|
+| ![Détail d'un arrêt](https://raw.githubusercontent.com/momierr/home-tcl-dashboard/main/.github/screenshots/stop.png) | ![Parcourir les lignes](https://raw.githubusercontent.com/momierr/home-tcl-dashboard/main/.github/screenshots/browse.png) |
+| **Thème nuit, de 20h à 7h** | **Sur un téléphone** |
+| ![Thème nuit](https://raw.githubusercontent.com/momierr/home-tcl-dashboard/main/.github/screenshots/home-night.png) | <img src="https://raw.githubusercontent.com/momierr/home-tcl-dashboard/main/.github/screenshots/phone.png" alt="Sur un téléphone" width="240"> |
+
 ## Prérequis
 
-- [pixi](https://pixi.sh)
+- Python 3.14 ou plus récent.
 - Un compte gratuit [data.grandlyon.com](https://data.grandlyon.com) avec
   accès aux jeux de données TCL (le temps réel et les alertes demandent un
   identifiant).
 
 ## Installation
 
+Avec pip, depuis [PyPI](https://pypi.org/project/home-tcl-dashboard/) :
+
 ```sh
-pixi install
-cp .env.example .env   # puis remplir GDL_USER et GDL_PWD
-pixi run serve         # http://localhost:8000
+pip install home-tcl-dashboard
 ```
 
-Lancez le serveur depuis la racine du dépôt : il range ses données dans
-`data/` (ignoré par git) :
+Dans le dossier d'où vous lancerez le serveur, créez un fichier `.env` avec
+vos identifiants Grand Lyon :
+
+```sh
+GDL_USER=votre-identifiant
+GDL_PWD=votre-mot-de-passe
+```
+
+Puis lancez :
+
+```sh
+home-tcl-dashboard     # http://localhost:8000, sur toutes les interfaces
+```
+
+Le serveur range ses données dans `data/`, dans le dossier courant, ou dans
+le dossier donné par la variable d'environnement `TCL_DATA_DIR` :
 
 | Fichier                | Contenu                                         |
 |------------------------|-------------------------------------------------|
@@ -62,7 +88,12 @@ API récentes : pas de `?.`, `??`, `replaceChildren`, `:has()`, ni de CSS
 
 ## Développement
 
+Le projet utilise [pixi](https://pixi.sh). Depuis la racine du dépôt :
+
 ```sh
+pixi install
+cp .env.example .env   # puis remplir GDL_USER et GDL_PWD
+pixi run serve         # http://localhost:8000, rechargé à chaque modification
 pixi run test          # pytest
 pixi run lint          # ruff check
 pixi run format-check  # ruff format --check
@@ -95,6 +126,27 @@ Trois couches :
   Grand Lyon en paramètres, ce qui permet de le tester sans serveur ni
   réseau, avec un faux client (`tests/fakes.py`).
 - Les autres modules sont des fonctions pures, que le `Dashboard` appelle.
+
+### La démo
+
+La démo est le même frontend, qui lit des réponses enregistrées dans `demo/`
+au lieu d'appeler le serveur. Pour la rafraîchir, de préférence à une heure
+de pointe :
+
+```sh
+pixi run python scripts/snapshot_demo.py   # quelques minutes
+```
+
+puis commitez `demo/`. Le workflow `pages.yml` republie la démo à chaque
+fusion dans `main`. Elle n'utilise pas les pictogrammes officiels, dont la
+licence de réutilisation n'est pas confirmée : elle dessine des badges qui
+leur ressemblent.
+
+### Publier une version
+
+Créez une release sur GitHub, avec un tag de la forme `0.3.0` sur `main`. Le
+workflow `publish.yml` construit le paquet et le publie sur PyPI : le numéro
+de version vient du tag (hatch-vcs).
 
 ## Crédits
 
