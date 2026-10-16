@@ -18,14 +18,7 @@ from home_tcl_dashboard.favourites import (
     load_favourites,
     save_favourites,
 )
-from home_tcl_dashboard.grandlyon import (
-    download_gtfs,
-    download_pictograms,
-    fetch_alerts,
-    fetch_passages,
-    fetch_wfs,
-    get_auth,
-)
+from home_tcl_dashboard.grandlyon import GrandLyon
 from home_tcl_dashboard.gtfs import build_departures, stop_orders
 from home_tcl_dashboard.network import (
     Line,
@@ -62,26 +55,28 @@ FAV_PATH = Path("data/favourites.json")
 PICTOS_DIR = Path("data/pictos")
 
 
-def load_network() -> tuple[dict[str, Platform], dict[str, Line]]:
+def load_network(client: GrandLyon) -> tuple[dict[str, Platform], dict[str, Line]]:
     """Platforms by id and lines by code, from the WFS."""
-    platform_rows = fetch_wfs("tclarret", "id,nom,desserte")
+    platform_rows = client.fetch_wfs("tclarret", "id,nom,desserte")
     platforms = {row["id"]: parse_platform(row) for row in platform_rows}
 
     line_rows: list[dict[str, str]] = []
     for layer in LINE_LAYERS:
-        line_rows.extend(fetch_wfs(layer, LINE_PROPERTIES, REGULAR_TRACES))
+        line_rows.extend(client.fetch_wfs(layer, LINE_PROPERTIES, REGULAR_TRACES))
     lines = parse_lines(line_rows)
 
     return platforms, lines
 
 
-def load_scheduled_departures(lines: dict[str, Line], today: date) -> list[Departure]:
+def load_scheduled_departures(
+    client: GrandLyon, lines: dict[str, Line], today: date
+) -> list[Departure]:
     """GTFS departures of the metro and funicular, for yesterday's and today's service.
 
     Yesterday's service runs past midnight (its last metros leave at 24:xx).
     """
     try:
-        download_gtfs(GTFS_PATH, auth=get_auth())
+        client.download_gtfs(GTFS_PATH)
     except requests.RequestException:
         if not GTFS_PATH.exists():
             raise
@@ -96,50 +91,52 @@ def load_scheduled_departures(lines: dict[str, Line], today: date) -> list[Depar
 def refresh_timetable(state: State, today: date) -> None:
     """Rebuild the scheduled departures when the day changes."""
     if state.scheduled_for != today:
-        state.scheduled = load_scheduled_departures(state.lines, today)
+        state.scheduled = load_scheduled_departures(state.grandlyon, state.lines, today)
         state.scheduled_for = today
 
 
-def load_stop_orders(lines: dict[str, Line]) -> None:
+def load_stop_orders(client: GrandLyon, lines: dict[str, Line]) -> None:
     """Fill each line's stops, in travel order, from the GTFS trips."""
-    download_gtfs(GTFS_PATH, auth=get_auth())
+    client.download_gtfs(GTFS_PATH)
     for (code, sens), stops in stop_orders(GTFS_PATH, set(lines)).items():
         lines[code].stops[sens] = stops
 
 
-def load_geometry() -> tuple[
-    dict[str, Point], dict[tuple[str, str], list[list[Point]]]
-]:
+def load_geometry(
+    client: GrandLyon,
+) -> tuple[dict[str, Point], dict[tuple[str, str], list[list[Point]]]]:
     """Platform positions and line traces, for the line map (browse screen)."""
     positions = {
         row["id"]: parse_points(row["the_geom"])[0]
-        for row in fetch_wfs("tclarret", "id,the_geom")
+        for row in client.fetch_wfs("tclarret", "id,the_geom")
         if row["the_geom"]
     }
     line_rows = [
         row
         for layer in LINE_LAYERS
-        for row in fetch_wfs(layer, "code_ligne,sens,the_geom", REGULAR_TRACES)
+        for row in client.fetch_wfs(layer, "code_ligne,sens,the_geom", REGULAR_TRACES)
     ]
     return positions, parse_traces(line_rows)
 
 
-def load_pictograms() -> None:
+def load_pictograms(client: GrandLyon) -> None:
     """Download the line pictograms once; without them the screens show badges."""
     try:
-        download_pictograms(PICTOS_DIR, get_auth())
+        client.download_pictograms(PICTOS_DIR)
     except requests.RequestException:
         pass
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    app.state.platforms, app.state.lines = load_network()
+    client = GrandLyon.from_env()
+    app.state.grandlyon = client
+    app.state.platforms, app.state.lines = load_network(client)
     app.state.scheduled_for = None
     refresh_timetable(app.state, date.today())
-    load_stop_orders(app.state.lines)
-    load_pictograms()
-    app.state.positions, app.state.traces = load_geometry()
+    load_stop_orders(client, app.state.lines)
+    load_pictograms(client)
+    app.state.positions, app.state.traces = load_geometry(client)
     app.state.passages = LastGood(PASSAGES_MAX_AGE)
     app.state.alerts = LastGood(ALERTS_MAX_AGE)
     app.state.favourites = load_favourites(FAV_PATH)
@@ -271,7 +268,9 @@ def current_departures(
     stale = False
     if realtime_ids:
         stale = request.app.state.passages.refresh(
-            lambda: fetch_passages(realtime_ids, get_auth()), now, realtime_ids
+            lambda: request.app.state.grandlyon.fetch_passages(realtime_ids),
+            now,
+            realtime_ids,
         )
     passages = latest_estimates(request.app.state.passages.rows)
     departures.extend(
@@ -328,7 +327,9 @@ def stop_detail(
 
 def current_alerts(request: Request, now: datetime) -> tuple[list[Alert], bool]:
     """The active traffic alerts, and if they are stale."""
-    stale = request.app.state.alerts.refresh(lambda: fetch_alerts(get_auth()), now)
+    stale = request.app.state.alerts.refresh(
+        lambda: request.app.state.grandlyon.fetch_alerts(), now
+    )
     alerts = active_alerts(
         [parse_alert(row) for row in request.app.state.alerts.rows], now
     )

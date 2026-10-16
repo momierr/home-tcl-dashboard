@@ -9,10 +9,41 @@ from home_tcl_dashboard import app as app_module
 from home_tcl_dashboard.app import app
 from home_tcl_dashboard.board import Favourite
 from home_tcl_dashboard.favourites import load_favourites, save_favourites
+from home_tcl_dashboard.grandlyon import GrandLyon
 from home_tcl_dashboard.network import Line, Platform
 from home_tcl_dashboard.realtime import Departure
 
 client = TestClient(app)
+
+
+class FakeGrandLyon(GrandLyon):
+    """No network: each test gives the answers it needs."""
+
+    def __init__(self, passages=None, alerts=None, wfs=None, gtfs=None):
+        super().__init__("user", "pwd")
+        self.passages = passages or (lambda platform_ids: [])
+        self.alerts = alerts or list
+        self.wfs = wfs
+        self.gtfs = gtfs
+
+    def fetch_passages(self, platform_ids):
+        return self.passages(platform_ids)
+
+    def fetch_alerts(self):
+        return self.alerts()
+
+    def fetch_wfs(self, layer, properties, cql_filter=None):
+        return self.wfs(layer, properties, cql_filter)
+
+    def download_gtfs(self, path):
+        self.gtfs(path)
+
+
+def use_grand_lyon(monkeypatch, **answers):
+    """Make the app start with a FakeGrandLyon instead of reading the .env."""
+    monkeypatch.setattr(
+        app_module.GrandLyon, "from_env", lambda: FakeGrandLyon(**answers)
+    )
 
 
 def test_health_returns_ok():
@@ -52,10 +83,8 @@ def fake_fetch_wfs(layer, properties, cql_filter=None):
     return LINE_ROWS[layer]
 
 
-def test_load_network_indexes_platforms_and_lines(monkeypatch):
-    monkeypatch.setattr(app_module, "fetch_wfs", fake_fetch_wfs)
-
-    platforms, lines = app_module.load_network()
+def test_load_network_indexes_platforms_and_lines():
+    platforms, lines = app_module.load_network(FakeGrandLyon(wfs=fake_fetch_wfs))
 
     assert platforms == {
         "32103": Platform(
@@ -109,23 +138,21 @@ FAKE_PASSAGES = [
 def test_board_returns_one_card_per_favourite(monkeypatch):
     requested_ids = []
 
-    def fake_fetch_passages(platform_ids, auth):
+    def fake_fetch_passages(platform_ids):
         requested_ids.extend(platform_ids)
         return FAKE_PASSAGES
 
     monkeypatch.setattr(
-        app_module, "load_network", lambda: (FAKE_PLATFORMS, FAKE_LINES)
+        app_module, "load_network", lambda client: (FAKE_PLATFORMS, FAKE_LINES)
     )
     monkeypatch.setattr(
-        app_module, "load_scheduled_departures", lambda lines, today: []
+        app_module, "load_scheduled_departures", lambda client, lines, today: []
     )
-    monkeypatch.setattr(app_module, "load_stop_orders", lambda lines: None)
-    monkeypatch.setattr(app_module, "load_pictograms", lambda: None)
-    monkeypatch.setattr(app_module, "load_geometry", lambda: ({}, {}))
+    monkeypatch.setattr(app_module, "load_stop_orders", lambda client, lines: None)
+    monkeypatch.setattr(app_module, "load_pictograms", lambda client: None)
+    monkeypatch.setattr(app_module, "load_geometry", lambda client: ({}, {}))
     monkeypatch.setattr(app_module, "load_favourites", lambda path: FAKE_FAVOURITES)
-    monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
-    monkeypatch.setattr(app_module, "fetch_passages", fake_fetch_passages)
-    monkeypatch.setattr(app_module, "fetch_alerts", lambda auth: [])
+    use_grand_lyon(monkeypatch, passages=fake_fetch_passages)
 
     with TestClient(app) as client:
         response = client.get("/api/board")
@@ -183,7 +210,7 @@ def test_board_uses_the_timetable_for_the_metro(monkeypatch):
     lines = {"A": Line("A", "MET", "#E8308A", {"A": "Vaulx-en-Velin La Soie"})}
     scheduled = Departure("A", "30101", datetime(2099, 1, 1, 8, 5), realtime=False)
 
-    def no_realtime(platform_ids, auth):
+    def no_realtime(platform_ids):
         raise AssertionError("the metro must not ask for real-time data")
 
     monkeypatch.setattr(
@@ -191,16 +218,16 @@ def test_board_uses_the_timetable_for_the_metro(monkeypatch):
         "load_favourites",
         lambda path: [Favourite(line="A", sens="A", platform="30101")],
     )
-    monkeypatch.setattr(app_module, "load_network", lambda: (platforms, lines))
+    monkeypatch.setattr(app_module, "load_network", lambda client: (platforms, lines))
     monkeypatch.setattr(
-        app_module, "load_scheduled_departures", lambda lines, today: [scheduled]
+        app_module,
+        "load_scheduled_departures",
+        lambda client, lines, today: [scheduled],
     )
-    monkeypatch.setattr(app_module, "load_stop_orders", lambda lines: None)
-    monkeypatch.setattr(app_module, "load_pictograms", lambda: None)
-    monkeypatch.setattr(app_module, "load_geometry", lambda: ({}, {}))
-    monkeypatch.setattr(app_module, "fetch_passages", no_realtime)
-    monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
-    monkeypatch.setattr(app_module, "fetch_alerts", lambda auth: [])
+    monkeypatch.setattr(app_module, "load_stop_orders", lambda client, lines: None)
+    monkeypatch.setattr(app_module, "load_pictograms", lambda client: None)
+    monkeypatch.setattr(app_module, "load_geometry", lambda client: ({}, {}))
+    use_grand_lyon(monkeypatch, passages=no_realtime)
 
     with TestClient(app) as client:
         response = client.get("/api/board")
@@ -219,28 +246,26 @@ def test_board_uses_the_timetable_for_the_metro(monkeypatch):
 def test_board_serves_stale_data_when_grand_lyon_is_down(monkeypatch):
     calls = []
 
-    def flaky_fetch_passages(platform_ids, auth):
+    def flaky_fetch_passages(platform_ids):
         calls.append(platform_ids)
         if len(calls) > 1:
             raise requests.ConnectionError()
         return FAKE_PASSAGES
 
-    def down(auth):
+    def down():
         raise requests.ConnectionError()
 
     monkeypatch.setattr(
-        app_module, "load_network", lambda: (FAKE_PLATFORMS, FAKE_LINES)
+        app_module, "load_network", lambda client: (FAKE_PLATFORMS, FAKE_LINES)
     )
     monkeypatch.setattr(
-        app_module, "load_scheduled_departures", lambda lines, today: []
+        app_module, "load_scheduled_departures", lambda client, lines, today: []
     )
-    monkeypatch.setattr(app_module, "load_stop_orders", lambda lines: None)
-    monkeypatch.setattr(app_module, "load_pictograms", lambda: None)
-    monkeypatch.setattr(app_module, "load_geometry", lambda: ({}, {}))
+    monkeypatch.setattr(app_module, "load_stop_orders", lambda client, lines: None)
+    monkeypatch.setattr(app_module, "load_pictograms", lambda client: None)
+    monkeypatch.setattr(app_module, "load_geometry", lambda client: ({}, {}))
     monkeypatch.setattr(app_module, "load_favourites", lambda path: FAKE_FAVOURITES)
-    monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
-    monkeypatch.setattr(app_module, "fetch_passages", flaky_fetch_passages)
-    monkeypatch.setattr(app_module, "fetch_alerts", down)
+    use_grand_lyon(monkeypatch, passages=flaky_fetch_passages, alerts=down)
     # never reuse the passages: the second board must ask Grand Lyon again
     monkeypatch.setattr(app_module, "PASSAGES_MAX_AGE", timedelta(0))
 
@@ -257,15 +282,16 @@ def test_board_serves_stale_data_when_grand_lyon_is_down(monkeypatch):
 
 def start_without_network(monkeypatch, favourites_path):
     monkeypatch.setattr(
-        app_module, "load_network", lambda: (FAKE_PLATFORMS, FAKE_LINES)
+        app_module, "load_network", lambda client: (FAKE_PLATFORMS, FAKE_LINES)
     )
     monkeypatch.setattr(
-        app_module, "load_scheduled_departures", lambda lines, today: []
+        app_module, "load_scheduled_departures", lambda client, lines, today: []
     )
-    monkeypatch.setattr(app_module, "load_stop_orders", lambda lines: None)
-    monkeypatch.setattr(app_module, "load_pictograms", lambda: None)
-    monkeypatch.setattr(app_module, "load_geometry", lambda: ({}, {}))
+    monkeypatch.setattr(app_module, "load_stop_orders", lambda client, lines: None)
+    monkeypatch.setattr(app_module, "load_pictograms", lambda client: None)
+    monkeypatch.setattr(app_module, "load_geometry", lambda client: ({}, {}))
     monkeypatch.setattr(app_module, "FAV_PATH", favourites_path)
+    use_grand_lyon(monkeypatch)
 
 
 def test_get_favourites_is_empty_on_first_start(monkeypatch, tmp_path):
@@ -321,7 +347,9 @@ def test_get_lines_lists_one_tab_without_stops(monkeypatch, tmp_path):
         "C9": Line("C9", "BUS", "#C88817", {"A": "Hopitaux Est"}, stops={"A": ["2"]}),
     }
     start_without_network(monkeypatch, tmp_path / "favourites.json")
-    monkeypatch.setattr(app_module, "load_network", lambda: (FAKE_PLATFORMS, lines))
+    monkeypatch.setattr(
+        app_module, "load_network", lambda client: (FAKE_PLATFORMS, lines)
+    )
 
     with TestClient(app) as client:
         response = client.get("/api/lines", params={"mode": "tram"})
@@ -346,7 +374,9 @@ def test_get_stops_lists_a_direction_in_travel_order(monkeypatch, tmp_path):
         "T2": Line("T2", "TRA", "#6BA230", stops={"A": ["33685", "32103"]}),
     }
     start_without_network(monkeypatch, tmp_path / "favourites.json")
-    monkeypatch.setattr(app_module, "load_network", lambda: (FAKE_PLATFORMS, lines))
+    monkeypatch.setattr(
+        app_module, "load_network", lambda client: (FAKE_PLATFORMS, lines)
+    )
 
     with TestClient(app) as client:
         response = client.get("/api/lines/T2/A/stops")
@@ -369,7 +399,9 @@ def test_get_stops_lists_a_direction_in_travel_order(monkeypatch, tmp_path):
 def test_get_stops_refuses_unknown_directions(monkeypatch, tmp_path, url, status):
     lines = {"T2": Line("T2", "TRA", "#6BA230", stops={"A": ["32103"]})}
     start_without_network(monkeypatch, tmp_path / "favourites.json")
-    monkeypatch.setattr(app_module, "load_network", lambda: (FAKE_PLATFORMS, lines))
+    monkeypatch.setattr(
+        app_module, "load_network", lambda client: (FAKE_PLATFORMS, lines)
+    )
 
     with TestClient(app) as client:
         response = client.get(url)
@@ -390,16 +422,17 @@ def test_stop_detail_shows_departures_and_next_stops(monkeypatch, tmp_path):
     }
     requested_ids = []
 
-    def fake_fetch_passages(platform_ids, auth):
+    def fake_fetch_passages(platform_ids):
         requested_ids.extend(platform_ids)
         return FAKE_PASSAGES
 
     path = tmp_path / "favourites.json"
     save_favourites(path, [Favourite(line="C9", sens="A", platform="33685")])
     start_without_network(monkeypatch, path)
-    monkeypatch.setattr(app_module, "load_network", lambda: (FAKE_PLATFORMS, lines))
-    monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
-    monkeypatch.setattr(app_module, "fetch_passages", fake_fetch_passages)
+    monkeypatch.setattr(
+        app_module, "load_network", lambda client: (FAKE_PLATFORMS, lines)
+    )
+    use_grand_lyon(monkeypatch, passages=fake_fetch_passages)
 
     with TestClient(app) as client:
         response = client.get("/api/stops/32103/T2/A")
@@ -441,12 +474,12 @@ def test_stop_detail_refuses_an_unknown_stop(monkeypatch, tmp_path):
 def test_refresh_timetable_rebuilds_once_a_day(monkeypatch):
     built_for = []
 
-    def fake_load(lines, today):
+    def fake_load(client, lines, today):
         built_for.append(today)
         return []
 
     monkeypatch.setattr(app_module, "load_scheduled_departures", fake_load)
-    state = State({"lines": {}, "scheduled_for": None})
+    state = State({"grandlyon": FakeGrandLyon(), "lines": {}, "scheduled_for": None})
 
     app_module.refresh_timetable(state, date(2026, 10, 16))
     app_module.refresh_timetable(state, date(2026, 10, 16))
@@ -462,7 +495,7 @@ def test_load_scheduled_departures_keeps_the_old_file_when_download_fails(
     path.write_bytes(b"yesterday's timetable")
     built_from = []
 
-    def down(path, auth):
+    def down(path):
         raise requests.ConnectionError()
 
     def fake_build(path, days, lines):
@@ -470,11 +503,11 @@ def test_load_scheduled_departures_keeps_the_old_file_when_download_fails(
         return []
 
     monkeypatch.setattr(app_module, "GTFS_PATH", path)
-    monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
-    monkeypatch.setattr(app_module, "download_gtfs", down)
     monkeypatch.setattr(app_module, "build_departures", fake_build)
 
-    app_module.load_scheduled_departures({}, date(2026, 10, 16))
+    app_module.load_scheduled_departures(
+        FakeGrandLyon(gtfs=down), {}, date(2026, 10, 16)
+    )
 
     assert built_from == [(path, [date(2026, 10, 15), date(2026, 10, 16)])]
 
@@ -495,7 +528,6 @@ def test_get_alerts_splits_my_lines_from_the_network(monkeypatch, tmp_path):
     path = tmp_path / "favourites.json"
     save_favourites(path, [Favourite(line="T2", sens="A", platform="32103")])
     start_without_network(monkeypatch, path)
-    monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
     rows = [
         {
             "ligne_cli": line,
@@ -512,7 +544,7 @@ def test_get_alerts_splits_my_lines_from_the_network(monkeypatch, tmp_path):
             ("T2", 20, "Travaux T2"),
         ]
     ]
-    monkeypatch.setattr(app_module, "fetch_alerts", lambda auth: rows)
+    use_grand_lyon(monkeypatch, alerts=lambda: rows)
 
     with TestClient(app) as client:
         body = client.get("/api/alerts").json()
@@ -531,8 +563,10 @@ def test_get_line_map_gives_the_trace_and_ordered_stops(monkeypatch, tmp_path):
     positions = {"32103": (45.7, 4.8), "33685": (45.75, 4.83)}
     traces = {("T2", "A"): [[(45.75, 4.83), (45.7, 4.8)]]}
     start_without_network(monkeypatch, tmp_path / "favourites.json")
-    monkeypatch.setattr(app_module, "load_network", lambda: (FAKE_PLATFORMS, lines))
-    monkeypatch.setattr(app_module, "load_geometry", lambda: (positions, traces))
+    monkeypatch.setattr(
+        app_module, "load_network", lambda client: (FAKE_PLATFORMS, lines)
+    )
+    monkeypatch.setattr(app_module, "load_geometry", lambda client: (positions, traces))
 
     with TestClient(app) as client:
         response = client.get("/api/lines/T2/A/map")
