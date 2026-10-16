@@ -3,6 +3,7 @@ from home_tcl_dashboard.network import (
     Platform,
     line_sort_key,
     lines_of_mode,
+    next_stops,
     parse_desserte,
     parse_lines,
     parse_platform,
@@ -124,3 +125,18 @@ def test_lines_of_mode_keeps_the_tab_lines_with_stops_in_order() -> None:
     tab = lines_of_mode(lines, "metro")
 
     assert [line.code for line in tab] == ["A", "F1"]
+
+
+STOPS = ["a", "b", "c", "d", "e"]
+
+
+def test_next_stops_starts_at_the_platform() -> None:
+    assert next_stops(STOPS, "b", n=2) == (["b", "c"], 2)
+
+
+def test_next_stops_near_the_terminus_has_nothing_left() -> None:
+    assert next_stops(STOPS, "d", n=7) == (["d", "e"], 0)
+
+
+def test_next_stops_at_the_terminus_is_only_itself() -> None:
+    assert next_stops(STOPS, "e") == (["e"], 0)

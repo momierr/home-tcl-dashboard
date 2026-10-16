@@ -71,3 +71,10 @@ def lines_of_mode(lines: dict[str, Line], mode: str) -> list[Line]:
         [line for line in lines.values() if MODES[line.mode] == mode and line.stops],
         key=lambda line: line_sort_key(line.code, mode),
     )
+
+
+def next_stops(stops: list[str], platform: str, n: int = 7) -> tuple[list[str], int]:
+    """The n stops from `platform` on (itself first), and how many come after them."""
+    start = stops.index(platform)
+    shown = stops[start : start + n]
+    return shown, len(stops) - start - len(shown)
