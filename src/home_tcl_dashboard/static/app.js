@@ -190,7 +190,7 @@ function lineBadge(code, colour, size) {
   badge.style.background = colour || known || "#596069";
   badge.style.fontSize = (size * 0.7) / 16 + "rem";
   if (window.DEMO) {
-    return badge; // the demo has no pictograms (their licence is unclear)
+    return demoBadge(code, badge); // the demo has no pictograms (their licence is unclear)
   }
   const img = el("img", "picto");
   img.src = "pictos/" + encodeURIComponent(code) + ".svg"; // relative: works under a sub-path
@@ -260,6 +260,7 @@ function isoLocal(date) {
 async function demoStart() {
   if (demo.snapshot === null) {
     demo.snapshot = await demoFile("snapshot.json");
+    await demoLines(); // every badge needs them
   }
   if (Date.now() - demo.offsetSince > DEMO_REPLAY_MS) {
     demo.offset = Date.now() - parseTime(demo.snapshot.now);
@@ -294,16 +295,50 @@ function demoFavourites() {
   }
 }
 
-// Every line by code (colour, destinations), from the three tabs.
+// Every line by code (colour, destinations, tab), from the three tabs.
 async function demoLines() {
   if (demo.lines === null) {
     const tabs = await Promise.all(MODES.map(([mode]) => demoFile("lines-" + mode + ".json")));
     demo.lines = {};
-    tabs.forEach((lines) => lines.forEach((line) => {
-      demo.lines[line.code] = line;
+    tabs.forEach((lines, i) => lines.forEach((line) => {
+      demo.lines[line.code] = Object.assign({ tab: MODES[i][0] }, line);
     }));
   }
   return demo.lines;
+}
+
+// Like the official pictograms: the mode on red, then the line on its colour
+// ("M" + "A", "T" + "2", "C" + "9", "BUS" + "37", "F" + "1").
+function demoBadgeParts(code) {
+  const line = demo.lines !== null ? demo.lines[code] : null;
+  if (!line) {
+    return null;
+  }
+  const match = (pattern) => code.match(pattern);
+  if (line.tab === "metro") {
+    return match(/^F(\d+)$/) ? ["F", match(/^F(\d+)$/)[1]] : ["M", code];
+  }
+  if (line.tab === "tram" && match(/^T(\d+)$/)) {
+    return ["T", match(/^T(\d+)$/)[1]];
+  }
+  if (match(/^C(\d.*)$/)) {
+    return ["C", match(/^C(\d.*)$/)[1]];
+  }
+  return ["BUS", code];
+}
+
+function demoBadge(code, badge) {
+  const parts = demoBadgeParts(code);
+  if (parts === null) {
+    return badge;
+  }
+  const split = el("span", "badge split");
+  split.style.fontSize = badge.style.fontSize;
+  split.appendChild(el("span", "badge-mode", parts[0]));
+  const number = el("span", "badge-code", parts[1]);
+  number.style.background = badge.style.background;
+  split.appendChild(number);
+  return split;
 }
 
 // A stop the recording has no departures for (a bus added in the demo): its
@@ -371,7 +406,6 @@ async function demoAlerts() {
 }
 
 async function demoBoard() {
-  await demoLines(); // the banner's badge takes its line colour from them
   const favourites = demoFavourites();
   const alerts = (await demoAlerts()).mine;
   const cards = await Promise.all(favourites.map((f) => demoCard(f, alerts)));
