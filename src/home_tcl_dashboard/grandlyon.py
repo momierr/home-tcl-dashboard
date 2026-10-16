@@ -16,8 +16,10 @@ def get_auth() -> tuple[str, str]:
     return os.environ["GDL_USER"], os.environ["GDL_PWD"]
 
 
-def fetch_wfs(layer: str, properties: str) -> list[dict[str, str]]:
-    """Rows of a Grand Lyon WFS Layer,  as dicts (CSV columns -> keys)."""
+def fetch_wfs(
+    layer: str, properties: str, cql_filter: str | None = None
+) -> list[dict[str, str]]:
+    """Rows of a Grand Lyon WFS layer, as dicts (CSV columns -> keys)."""
     params = {
         "SERVICE": "WFS",
         "VERSION": "2.0.0",
@@ -26,6 +28,8 @@ def fetch_wfs(layer: str, properties: str) -> list[dict[str, str]]:
         "outputFormat": "CSV",
         "propertyName": properties,
     }
+    if cql_filter is not None:
+        params["CQL_FILTER"] = cql_filter
 
     response = requests.get(WFS_URL, params=params, timeout=30)
     response.raise_for_status()

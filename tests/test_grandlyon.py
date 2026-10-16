@@ -33,6 +33,34 @@ def test_fetch_wfs_parses_csv_rows(monkeypatch):
     assert calls[0]["typename"] == "sytral:tcl_sytral.tclarret"
 
 
+def test_fetch_wfs_sends_cql_filter(monkeypatch):
+    calls = []
+
+    def fake_get(url, params, timeout):
+        calls.append(params)
+        return FakeResponse()
+
+    monkeypatch.setattr(requests, "get", fake_get)
+
+    fetch_wfs("tcllignebus_2_0_0", "code_ligne", cql_filter="type_trace='NOM'")
+
+    assert calls[0]["CQL_FILTER"] == "type_trace='NOM'"
+
+
+def test_fetch_wfs_sends_no_cql_filter_by_default(monkeypatch):
+    calls = []
+
+    def fake_get(url, params, timeout):
+        calls.append(params)
+        return FakeResponse()
+
+    monkeypatch.setattr(requests, "get", fake_get)
+
+    fetch_wfs("tclarret", "id")
+
+    assert "CQL_FILTER" not in calls[0]
+
+
 class FakeJsonResponse:
     def raise_for_status(self) -> None:
         pass
