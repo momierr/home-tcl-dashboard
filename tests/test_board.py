@@ -38,3 +38,20 @@ def test_build_card_for_perrache_t2() -> None:
         destination="Saint-Priest Bel Air",
         departures=[t2],
     )
+
+
+def test_build_card_keeps_only_departures_of_its_platform() -> None:
+    favourite = Favourite(line="T2", sens="A", platform="32103")
+    platforms = {
+        "32103": Platform(id="32103", name="Perrache", line_directions={("T2", "A")})
+    }
+    lines = {
+        "T2": Line("T2", "TRA", "#6BA230", {"A": "Saint-Priest Bel Air"}),
+    }
+    here = Departure("T2", "32103", datetime(2026, 10, 16, 8, 5), realtime=True)
+    elsewhere = Departure("T2", "99999", datetime(2026, 10, 16, 8, 3), realtime=True)
+    now = datetime(2026, 10, 16, 8, 0)
+
+    card = build_card(favourite, platforms, lines, [here, elsewhere], now)
+
+    assert card.departures == [here]

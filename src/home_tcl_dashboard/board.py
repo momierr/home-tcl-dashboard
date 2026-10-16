@@ -30,9 +30,10 @@ def build_card(
     """Everything one home-screen card shows, for one favourite."""
     platform = platforms[favourite.platform]
     line = lines[favourite.line]
+    here = [d for d in departures if d.platform == platform.id]
     return Card(
         line=line.code,
         platform_name=platform.name,
         destination=line.destinations[favourite.sens],
-        departures=next_departures(departures, line.code, now),
+        departures=next_departures(here, line.code, now),
     )
