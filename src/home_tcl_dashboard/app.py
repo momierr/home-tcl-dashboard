@@ -1,3 +1,4 @@
+import os
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -21,7 +22,13 @@ from home_tcl_dashboard.dashboard import (
 )
 from home_tcl_dashboard.grandlyon import GrandLyon
 
-DATA_DIR = Path("data")
+
+def data_dir() -> Path:
+    """Where the GTFS, pictograms and favourites go: $TCL_DATA_DIR, else ./data."""
+    return Path(os.environ.get("TCL_DATA_DIR", "data"))
+
+
+DATA_DIR = data_dir()
 STATIC_DIR = Path(__file__).parent / "static"
 
 

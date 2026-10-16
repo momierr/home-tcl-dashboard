@@ -175,3 +175,16 @@ def test_download_pictograms_skips_when_already_there(tmp_path):
     client, _ = client_with()  # any call would fail
 
     client.download_pictograms(tmp_path / "pictos")
+
+
+def test_from_env_reads_the_env_file_of_the_current_directory(monkeypatch, tmp_path):
+    (tmp_path / ".env").write_text("GDL_USER=alice\nGDL_PWD=secret\n")
+    monkeypatch.chdir(tmp_path)
+    for name in ("GDL_USER", "GDL_PWD"):
+        # setenv first, so monkeypatch removes what load_dotenv sets afterwards
+        monkeypatch.setenv(name, "")
+        monkeypatch.delenv(name)
+
+    client = GrandLyon.from_env()
+
+    assert client.session.auth == ("alice", "secret")

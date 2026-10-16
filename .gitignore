@@ -33,3 +33,4 @@ htmlcov/
 Thumbs.db
 
 data/
+dist/
