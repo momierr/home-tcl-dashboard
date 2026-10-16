@@ -1,4 +1,3 @@
-import re
 from dataclasses import dataclass, field
 
 
@@ -15,6 +14,7 @@ class Line:
     mode: str
     colour: str
     destinations: dict[str, str] = field(default_factory=dict)
+    stops: dict[str, list[str]] = field(default_factory=dict)  # sens -> platform ids
 
 
 def parse_desserte(desserte: str) -> set[tuple[str, str]]:
@@ -46,24 +46,3 @@ def parse_lines(rows: list[dict[str, str]]) -> dict[str, Line]:
             lines[code].destinations[sens] = row["nom_destination"]
 
     return lines
-
-
-def parse_points(wkt: str) -> list[tuple[float, float]]:
-    """'POINT (45.75 4.83)' or a MULTILINESTRING -> [(lat, lon), ...]."""
-    numbers = [float(x) for x in re.findall(r"-?\d+(?:\.\d+)?", wkt)]
-    return list(zip(numbers[::2], numbers[1::2], strict=True))
-
-
-def order_platforms(
-    trace: list[tuple[float, float]], positions: dict[str, tuple[float, float]]
-) -> list[str]:
-    """Platform ids in travel order: each one sits at its closest vertex of the trace."""
-
-    def closest_vertex(platform_id: str) -> int:
-        lat, lon = positions[platform_id]
-        return min(
-            range(len(trace)),
-            key=lambda i: (trace[i][0] - lat) ** 2 + (trace[i][1] - lon) ** 2,
-        )
-
-    return sorted(positions, key=closest_vertex)

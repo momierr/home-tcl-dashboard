@@ -20,7 +20,7 @@ from home_tcl_dashboard.grandlyon import (
     fetch_wfs,
     get_auth,
 )
-from home_tcl_dashboard.gtfs import build_departures
+from home_tcl_dashboard.gtfs import build_departures, stop_orders
 from home_tcl_dashboard.network import Line, Platform, parse_lines, parse_platform
 from home_tcl_dashboard.realtime import Departure, latest_estimates, parse_departure
 
@@ -55,10 +55,18 @@ def load_scheduled_departures(lines: dict[str, Line]) -> list[Departure]:
     return build_departures(GTFS_PATH, date.today(), scheduled_lines)
 
 
+def load_stop_orders(lines: dict[str, Line]) -> None:
+    """Fill each line's stops, in travel order, from the GTFS trips."""
+    download_gtfs(GTFS_PATH, auth=get_auth())
+    for (code, sens), stops in stop_orders(GTFS_PATH, set(lines)).items():
+        lines[code].stops[sens] = stops
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.platforms, app.state.lines = load_network()
     app.state.scheduled = load_scheduled_departures(app.state.lines)
+    load_stop_orders(app.state.lines)
     app.state.passages = LastGood()
     app.state.alerts = LastGood()
     app.state.favourites = load_favourites(FAV_PATH)

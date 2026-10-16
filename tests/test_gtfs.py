@@ -9,6 +9,7 @@ from home_tcl_dashboard.gtfs import (
     active_services,
     build_departures,
     gtfs_time,
+    stop_orders,
 )
 from home_tcl_dashboard.realtime import Departure
 
@@ -110,3 +111,31 @@ def test_build_departures_keeps_running_trips_of_the_lines(tmp_path: Path) -> No
         Departure("A", "30101", datetime(2026, 10, 11, 18, 2), realtime=False),
         Departure("A", "30103", datetime(2026, 10, 12, 0, 30), realtime=False),
     ]
+
+
+def test_stop_orders_keeps_the_longest_trip_of_each_direction(tmp_path: Path) -> None:
+    path = tmp_path / "gtfs.zip"
+    write_gtfs(
+        path,
+        {
+            "trips.txt": "route_id,service_id,trip_id,direction_id\n"
+            "C9,s,full,0\n"
+            "C9,s,short,0\n"
+            "C9,s,back,1\n"
+            "T2,s,other,0\n",
+            "stop_times.txt": "trip_id,departure_time,stop_id,stop_sequence\n"
+            "full,08:02:00,b,2\n"
+            "full,08:00:00,a,1\n"
+            "full,08:04:00,c,3\n"
+            "short,09:00:00,a,1\n"
+            "short,09:02:00,b,2\n"
+            "back,10:00:00,c,1\n"
+            "back,10:04:00,a,2\n"
+            "other,11:00:00,x,1\n",
+        },
+    )
+
+    assert stop_orders(path, {"C9"}) == {
+        ("C9", "A"): ["a", "b", "c"],
+        ("C9", "R"): ["c", "a"],
+    }

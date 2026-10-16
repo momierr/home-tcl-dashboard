@@ -115,6 +115,7 @@ def test_board_returns_one_card_per_favourite(monkeypatch):
         app_module, "load_network", lambda: (FAKE_PLATFORMS, FAKE_LINES)
     )
     monkeypatch.setattr(app_module, "load_scheduled_departures", lambda lines: [])
+    monkeypatch.setattr(app_module, "load_stop_orders", lambda lines: None)
     monkeypatch.setattr(app_module, "load_favourites", lambda path: FAKE_FAVOURITES)
     monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
     monkeypatch.setattr(app_module, "fetch_passages", fake_fetch_passages)
@@ -182,6 +183,7 @@ def test_board_uses_the_timetable_for_the_metro(monkeypatch):
     monkeypatch.setattr(
         app_module, "load_scheduled_departures", lambda lines: [scheduled]
     )
+    monkeypatch.setattr(app_module, "load_stop_orders", lambda lines: None)
     monkeypatch.setattr(app_module, "fetch_passages", no_realtime)
     monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
     monkeypatch.setattr(app_module, "fetch_alerts", lambda auth: [])
@@ -216,6 +218,7 @@ def test_board_serves_stale_data_when_grand_lyon_is_down(monkeypatch):
         app_module, "load_network", lambda: (FAKE_PLATFORMS, FAKE_LINES)
     )
     monkeypatch.setattr(app_module, "load_scheduled_departures", lambda lines: [])
+    monkeypatch.setattr(app_module, "load_stop_orders", lambda lines: None)
     monkeypatch.setattr(app_module, "load_favourites", lambda path: FAKE_FAVOURITES)
     monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
     monkeypatch.setattr(app_module, "fetch_passages", flaky_fetch_passages)
@@ -237,6 +240,7 @@ def start_without_network(monkeypatch, favourites_path):
         app_module, "load_network", lambda: (FAKE_PLATFORMS, FAKE_LINES)
     )
     monkeypatch.setattr(app_module, "load_scheduled_departures", lambda lines: [])
+    monkeypatch.setattr(app_module, "load_stop_orders", lambda lines: None)
     monkeypatch.setattr(app_module, "FAV_PATH", favourites_path)
 
 

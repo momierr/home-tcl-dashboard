@@ -1,6 +1,7 @@
 import csv
 import io
 import zipfile
+from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -79,3 +80,33 @@ def build_departures(path: Path, day: date, lines: set[str]) -> list[Departure]:
                     )
                 )
     return departures
+
+
+def stop_orders(path: Path, lines: set[str]) -> dict[tuple[str, str], list[str]]:
+    """(line, sens) -> platform ids of its longest trip, in travel order."""
+    with zipfile.ZipFile(path) as archive:
+        trip_keys = {
+            row["trip_id"]: (
+                row["route_id"],
+                "A" if row["direction_id"] == "0" else "R",
+            )
+            for row in read_csv(archive, "trips.txt")
+            if row["route_id"] in lines
+        }
+        sizes = Counter(
+            row["trip_id"]
+            for row in read_csv(archive, "stop_times.txt")
+            if row["trip_id"] in trip_keys
+        )
+        longest: dict[tuple[str, str], str] = {}
+        for trip_id, size in sizes.items():
+            key = trip_keys[trip_id]
+            if key not in longest or size > sizes[longest[key]]:
+                longest[key] = trip_id
+        chosen = {trip_id: key for key, trip_id in longest.items()}
+        stops: dict[tuple[str, str], list[tuple[int, str]]] = defaultdict(list)
+        for row in read_csv(archive, "stop_times.txt"):
+            direction = chosen.get(row["trip_id"])
+            if direction is not None:
+                stops[direction].append((int(row["stop_sequence"]), row["stop_id"]))
+    return {key: [stop for _, stop in sorted(rows)] for key, rows in stops.items()}
