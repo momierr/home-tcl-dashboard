@@ -1,4 +1,11 @@
-from datetime import date
+import csv
+import io
+import zipfile
+from collections.abc import Iterable, Iterator
+from datetime import date, datetime, time, timedelta
+from pathlib import Path
+
+from home_tcl_dashboard.realtime import Departure
 
 WEEKDAYS = [
     "monday",
@@ -12,8 +19,8 @@ WEEKDAYS = [
 
 
 def active_services(
-    calendar: list[dict[str, str]],
-    calendar_dates: list[dict[str, str]],
+    calendar: Iterable[dict[str, str]],
+    calendar_dates: Iterable[dict[str, str]],
     day: date,
 ) -> set[str]:
     """Service ids running on `day`: weekly calendar, then added (1) / removed (2)."""
@@ -31,3 +38,44 @@ def active_services(
             else:
                 active.discard(row["service_id"])
     return active
+
+
+def gtfs_time(day: date, hms: str) -> datetime:
+    """'25:10:00' on service day 2026-10-16 -> 2026-10-17 01:10:00."""
+    hours, minutes, seconds = (int(part) for part in hms.split(":"))
+    midnight = datetime.combine(day, time())
+    return midnight + timedelta(hours=hours, minutes=minutes, seconds=seconds)
+
+
+def read_csv(archive: zipfile.ZipFile, name: str) -> Iterator[dict[str, str]]:
+    """Rows of a CSV file inside the zip, streamed (never fully loaded in memory)."""
+    with archive.open(name) as raw:
+        yield from csv.DictReader(io.TextIOWrapper(raw, encoding="utf-8"))
+
+
+def build_departures(path: Path, day: date, lines: set[str]) -> list[Departure]:
+    """Scheduled departures of `lines` for the service day `day`."""
+    with zipfile.ZipFile(path) as archive:
+        services = active_services(
+            read_csv(archive, "calendar.txt"),
+            read_csv(archive, "calendar_dates.txt"),
+            day,
+        )
+        trip_lines = {
+            row["trip_id"]: row["route_id"]
+            for row in read_csv(archive, "trips.txt")
+            if row["service_id"] in services and row["route_id"] in lines
+        }
+        departures = []
+        for row in read_csv(archive, "stop_times.txt"):
+            line = trip_lines.get(row["trip_id"])
+            if line is not None:
+                departures.append(
+                    Departure(
+                        line=line,
+                        platform=row["stop_id"],
+                        time=gtfs_time(day, row["departure_time"]),
+                        realtime=False,
+                    )
+                )
+    return departures
