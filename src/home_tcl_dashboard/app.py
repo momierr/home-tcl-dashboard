@@ -145,28 +145,36 @@ def get_stops(
     ]
 
 
-@app.get("/api/board")
-def board(request: Request) -> Board:
-    """One card per favourite, with its next departures."""
+def current_departures(
+    request: Request, favourites: list[Favourite], now: datetime
+) -> tuple[list[Departure], bool]:
+    """GTFS departures plus real-time ones for these favourites, and if stale."""
     lines = request.app.state.lines
     departures = list(request.app.state.scheduled)
     realtime_ids = [
         favourite.platform
-        for favourite in request.app.state.favourites
+        for favourite in favourites
         if lines[favourite.line].mode not in SCHEDULED_MODES
     ]
 
-    now = datetime.now()
-
-    passages_stale = False
-
+    stale = False
     if realtime_ids:
-        passages_stale = request.app.state.passages.refresh(
+        stale = request.app.state.passages.refresh(
             lambda: fetch_passages(realtime_ids, get_auth()), now
         )
     passages = latest_estimates(request.app.state.passages.rows)
-
     departures.extend(parse_departure(passage) for passage in passages)
+    return departures, stale
+
+
+@app.get("/api/board")
+def board(request: Request) -> Board:
+    """One card per favourite, with its next departures."""
+    lines = request.app.state.lines
+    now = datetime.now()
+    departures, passages_stale = current_departures(
+        request, request.app.state.favourites, now
+    )
 
     alerts_stale = request.app.state.alerts.refresh(
         lambda: fetch_alerts(get_auth()), now
