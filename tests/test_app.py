@@ -552,3 +552,14 @@ def test_get_line_map_gives_the_trace_and_ordered_stops(monkeypatch, tmp_path):
         ],
     }
     assert unknown.status_code == 404
+
+
+def test_files_are_revalidated_but_not_the_api(monkeypatch, tmp_path):
+    start_without_network(monkeypatch, tmp_path / "favourites.json")
+
+    with TestClient(app) as client:
+        page = client.get("/")
+        api = client.get("/api/health")
+
+    assert page.headers["cache-control"] == "no-cache"
+    assert "cache-control" not in api.headers

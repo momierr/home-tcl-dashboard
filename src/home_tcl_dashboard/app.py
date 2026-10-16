@@ -1,4 +1,4 @@
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 import requests
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import State
 
@@ -147,6 +147,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+@app.middleware("http")
+async def revalidate_files(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """Without a Cache-Control header, browsers guess how long to keep a file, and
+    the tablet could run an old app.js after an update. "no-cache" makes them ask
+    each time; the ETag answers "not modified" cheaply when nothing changed."""
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 @app.get("/api/health")
