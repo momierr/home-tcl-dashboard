@@ -50,6 +50,10 @@ LINE_LAYERS = ["tcllignemf_2_0_0", "tcllignetram_2_0_0", "tcllignebus_2_0_0"]
 LINE_PROPERTIES = "code_ligne,sens,nom_destination,famille_transport,couleur_hex"
 REGULAR_TRACES = "type_trace='NOM' AND code_type_ligne='REG'"
 SCHEDULED_MODES = {"MET", "FUN"}
+# Grand Lyon updates the passages once a minute: asking more often only adds a
+# second of wait to every screen. Alerts change far less often.
+PASSAGES_MAX_AGE = timedelta(seconds=30)
+ALERTS_MAX_AGE = timedelta(minutes=5)
 
 
 GTFS_PATH = Path("data/GTFS_TCL.ZIP")
@@ -136,8 +140,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     load_stop_orders(app.state.lines)
     load_pictograms()
     app.state.positions, app.state.traces = load_geometry()
-    app.state.passages = LastGood()
-    app.state.alerts = LastGood()
+    app.state.passages = LastGood(PASSAGES_MAX_AGE)
+    app.state.alerts = LastGood(ALERTS_MAX_AGE)
     app.state.favourites = load_favourites(FAV_PATH)
     yield
 
@@ -254,7 +258,7 @@ def current_departures(
     stale = False
     if realtime_ids:
         stale = request.app.state.passages.refresh(
-            lambda: fetch_passages(realtime_ids, get_auth()), now
+            lambda: fetch_passages(realtime_ids, get_auth()), now, realtime_ids
         )
     passages = latest_estimates(request.app.state.passages.rows)
     departures.extend(
@@ -360,7 +364,9 @@ def board(request: Request) -> Board:
         cards=cards,
         banner=build_banner(request.app.state.favourites, alerts),
         now=now,
-        updated_at=request.app.state.alerts.fetched_at,
+        # the passages are the fresher data; metro-only favourites have none
+        updated_at=request.app.state.passages.fetched_at
+        or request.app.state.alerts.fetched_at,
         stale=passages_stale or alerts_stale,
     )
 

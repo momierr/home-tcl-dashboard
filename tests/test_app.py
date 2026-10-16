@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pytest
 import requests
@@ -241,15 +241,17 @@ def test_board_serves_stale_data_when_grand_lyon_is_down(monkeypatch):
     monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
     monkeypatch.setattr(app_module, "fetch_passages", flaky_fetch_passages)
     monkeypatch.setattr(app_module, "fetch_alerts", down)
+    # never reuse the passages: the second board must ask Grand Lyon again
+    monkeypatch.setattr(app_module, "PASSAGES_MAX_AGE", timedelta(0))
 
     with TestClient(app) as client:
-        client.get("/api/board")  # Grand Lyon answers: passages are cached
+        first = client.get("/api/board")  # Grand Lyon answers: passages are cached
         response = client.get("/api/board")  # Grand Lyon is down
 
     assert response.status_code == 200
     body = response.json()
     assert body["stale"] is True
-    assert body["updated_at"] is None  # alerts never succeeded
+    assert body["updated_at"] == first.json()["now"]  # the last good passages
     assert [len(card["departures"]) for card in body["cards"]] == [1, 1]
 
 
