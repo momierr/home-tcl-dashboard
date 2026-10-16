@@ -29,8 +29,14 @@ from home_tcl_dashboard.network import (
     lines_of_mode,
     parse_lines,
     parse_platform,
+    timeline,
 )
-from home_tcl_dashboard.realtime import Departure, latest_estimates, parse_departure
+from home_tcl_dashboard.realtime import (
+    Departure,
+    latest_estimates,
+    next_departures,
+    parse_departure,
+)
 
 LINE_LAYERS = ["tcllignemf_2_0_0", "tcllignetram_2_0_0", "tcllignebus_2_0_0"]
 LINE_PROPERTIES = "code_ligne,sens,nom_destination,famille_transport,couleur_hex"
@@ -165,6 +171,52 @@ def current_departures(
     passages = latest_estimates(request.app.state.passages.rows)
     departures.extend(parse_departure(passage) for passage in passages)
     return departures, stale
+
+
+@dataclass
+class StopDetail:
+    line: str
+    colour: str
+    platform_name: str
+    destination: str
+    departures: list[Departure]
+    next_stops: list[str]
+    remaining: int
+    favourite: bool
+    now: datetime
+    stale: bool
+
+
+@app.get("/api/stops/{platform}/{line}/{sens}")
+def stop_detail(
+    platform: str, line: str, sens: Literal["A", "R"], request: Request
+) -> StopDetail:
+    """The detail screen of one stop of a line: 6 departures and the next stops."""
+    platforms = request.app.state.platforms
+    lines = request.app.state.lines
+    here = Favourite(line=line, sens=sens, platform=platform)
+    errors = favourite_errors([here], platforms, lines)
+    if errors:
+        raise HTTPException(status_code=404, detail=errors)
+
+    now = datetime.now()
+    favourites = request.app.state.favourites
+    # ask for all favourites too, so the shared real-time cache keeps the board's
+    departures, stale = current_departures(request, [*favourites, here], now)
+    at_platform = [d for d in departures if d.platform == platform]
+    shown, remaining = timeline(lines[line].stops.get(sens, []), platform, platforms)
+    return StopDetail(
+        line=line,
+        colour=lines[line].colour,
+        platform_name=platforms[platform].name,
+        destination=lines[line].destinations[sens],
+        departures=next_departures(at_platform, line, now, n=6),
+        next_stops=shown,
+        remaining=remaining,
+        favourite=here in favourites,
+        now=now,
+        stale=stale,
+    )
 
 
 @app.get("/api/board")

@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from home_tcl_dashboard import app as app_module
 from home_tcl_dashboard.app import app
 from home_tcl_dashboard.board import Favourite
-from home_tcl_dashboard.favourites import load_favourites
+from home_tcl_dashboard.favourites import load_favourites, save_favourites
 from home_tcl_dashboard.network import Line, Platform
 from home_tcl_dashboard.realtime import Departure
 
@@ -352,3 +352,64 @@ def test_get_stops_refuses_unknown_directions(monkeypatch, tmp_path, url, status
         response = client.get(url)
 
     assert response.status_code == status
+
+
+def test_stop_detail_shows_departures_and_next_stops(monkeypatch, tmp_path):
+    lines = {
+        "T2": Line(
+            "T2",
+            "TRA",
+            "#6BA230",
+            {"A": "Saint-Priest Bel Air"},
+            stops={"A": ["32103", "33685"]},
+        ),
+        "C9": FAKE_LINES["C9"],
+    }
+    requested_ids = []
+
+    def fake_fetch_passages(platform_ids, auth):
+        requested_ids.extend(platform_ids)
+        return FAKE_PASSAGES
+
+    path = tmp_path / "favourites.json"
+    save_favourites(path, [Favourite(line="C9", sens="A", platform="33685")])
+    start_without_network(monkeypatch, path)
+    monkeypatch.setattr(app_module, "load_network", lambda: (FAKE_PLATFORMS, lines))
+    monkeypatch.setattr(app_module, "get_auth", lambda: ("user", "pwd"))
+    monkeypatch.setattr(app_module, "fetch_passages", fake_fetch_passages)
+
+    with TestClient(app) as client:
+        response = client.get("/api/stops/32103/T2/A")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body.pop("now")
+    assert body == {
+        "line": "T2",
+        "colour": "#6BA230",
+        "platform_name": "Perrache",
+        "destination": "Saint-Priest Bel Air",
+        "departures": [
+            {
+                "line": "T2",
+                "platform": "32103",
+                "time": "2099-01-01T08:05:00",
+                "realtime": True,
+            }
+        ],
+        "next_stops": ["Perrache", "Bellecour A. Poncet"],
+        "remaining": 0,
+        "favourite": False,
+        "stale": False,
+    }
+    # the board's favourite platform is fetched too, to keep the shared cache
+    assert requested_ids == ["33685", "32103"]
+
+
+def test_stop_detail_refuses_an_unknown_stop(monkeypatch, tmp_path):
+    start_without_network(monkeypatch, tmp_path / "favourites.json")
+
+    with TestClient(app) as client:
+        response = client.get("/api/stops/32103/T2/R")
+
+    assert response.status_code == 404
