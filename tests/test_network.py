@@ -1,6 +1,7 @@
 from home_tcl_dashboard.network import (
     Line,
     Platform,
+    line_sort_key,
     parse_desserte,
     parse_lines,
     parse_platform,
@@ -74,3 +75,38 @@ def test_parse_lines_keeps_first_trace_of_a_direction():
     ]
 
     assert parse_lines(rows)["43"].destinations == {"A": "First"}
+
+
+def test_line_sort_key_metro_is_alphabetical() -> None:
+    codes = ["D", "F2", "A", "C", "F1", "B"]
+
+    result = sorted(codes, key=lambda code: line_sort_key(code, "metro"))
+
+    assert result == ["A", "B", "C", "D", "F1", "F2"]
+
+
+def test_line_sort_key_bus_follows_prefix_order() -> None:
+    codes = ["J501", "PL1", "TB11", "T36", "A71", "N181", "33", "C10", "C9", "XYZ1"]
+
+    result = sorted(codes, key=lambda code: line_sort_key(code, "bus"))
+
+    assert result == [
+        "C9",
+        "C10",
+        "33",
+        "N181",
+        "A71",
+        "T36",
+        "TB11",
+        "PL1",
+        "J501",
+        "XYZ1",
+    ]
+
+
+def test_line_sort_key_numbers_are_natural() -> None:
+    codes = ["102", "98EX", "33", "98"]
+
+    result = sorted(codes, key=lambda code: line_sort_key(code, "bus"))
+
+    assert result == ["33", "98", "98EX", "102"]

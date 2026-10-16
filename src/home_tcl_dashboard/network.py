@@ -1,4 +1,7 @@
+import re
 from dataclasses import dataclass, field
+
+PREFIX_ORDER = ["C", "", "N", "A", "T", "TB", "PL", "J"]
 
 
 @dataclass
@@ -46,3 +49,16 @@ def parse_lines(rows: list[dict[str, str]]) -> dict[str, Line]:
             lines[code].destinations[sens] = row["nom_destination"]
 
     return lines
+
+
+def line_sort_key(code: str, mode: str) -> tuple[int, str, int, str]:
+    """Natural order ('C9' < 'C10'); bus prefixes follow PREFIX_ORDER."""
+    match = re.fullmatch(r"([A-Z]*)(\d*)(.*)", code)
+    assert match is not None
+    prefix, number, suffix = match.groups()
+    rank = 0
+    if mode == "bus":
+        rank = (
+            PREFIX_ORDER.index(prefix) if prefix in PREFIX_ORDER else len(PREFIX_ORDER)
+        )
+    return rank, prefix, int(number or 0), suffix
