@@ -3,6 +3,7 @@ from typing import Any
 
 from home_tcl_dashboard.realtime import (
     Departure,
+    drop_doubled_schedules,
     latest_estimates,
     next_departures,
     parse_departure,
@@ -34,6 +35,13 @@ def test_latest_estimates_keeps_distinct_trips() -> None:
     second = dummy_passage(coursetheorique="trip-2")
 
     assert latest_estimates([first, second]) == [first, second]
+
+
+def test_latest_estimates_keeps_same_trip_at_two_stops() -> None:
+    here = dummy_passage(id="32103")
+    there = dummy_passage(id="32104")
+
+    assert latest_estimates([here, there]) == [here, there]
 
 
 def test_latest_estimates_empty() -> None:
@@ -110,3 +118,31 @@ def test_next_departures_keeps_departure_at_now() -> None:
     at_now = dummy_departure(time=NOW)
 
     assert next_departures([at_now], "T2", NOW) == [at_now]
+
+
+def test_drop_doubled_schedules_drops_scheduled_next_to_live() -> None:
+    # seen on line 90: one bus, two trip ids, 8 s apart
+    scheduled = dummy_departure(time=datetime(2026, 10, 16, 17, 23, 0), realtime=False)
+    live = dummy_departure(time=datetime(2026, 10, 16, 17, 23, 8), realtime=True)
+
+    assert drop_doubled_schedules([scheduled, live]) == [live]
+
+
+def test_drop_doubled_schedules_keeps_scheduled_far_from_live() -> None:
+    scheduled = dummy_departure(time=datetime(2026, 10, 16, 17, 29), realtime=False)
+    live = dummy_departure(time=datetime(2026, 10, 16, 17, 34), realtime=True)
+
+    assert drop_doubled_schedules([scheduled, live]) == [scheduled, live]
+
+
+def test_drop_doubled_schedules_keeps_other_stop_and_line() -> None:
+    time = datetime(2026, 10, 16, 17, 23)
+    live = dummy_departure(time=time, realtime=True)
+    other_stop = dummy_departure(time=time, realtime=False, platform="99999")
+    other_line = dummy_departure(time=time, realtime=False, line="C3")
+
+    assert drop_doubled_schedules([live, other_stop, other_line]) == [
+        live,
+        other_stop,
+        other_line,
+    ]

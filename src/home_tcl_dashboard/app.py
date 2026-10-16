@@ -40,6 +40,7 @@ from home_tcl_dashboard.network import (
 )
 from home_tcl_dashboard.realtime import (
     Departure,
+    drop_doubled_schedules,
     latest_estimates,
     next_departures,
     parse_departure,
@@ -256,7 +257,9 @@ def current_departures(
             lambda: fetch_passages(realtime_ids, get_auth()), now
         )
     passages = latest_estimates(request.app.state.passages.rows)
-    departures.extend(parse_departure(passage) for passage in passages)
+    departures.extend(
+        drop_doubled_schedules([parse_departure(passage) for passage in passages])
+    )
     return departures, stale
 
 
