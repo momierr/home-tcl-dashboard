@@ -78,3 +78,18 @@ def next_stops(stops: list[str], platform: str, n: int = 7) -> tuple[list[str], 
     start = stops.index(platform)
     shown = stops[start : start + n]
     return shown, len(stops) - start - len(shown)
+
+
+def timeline(
+    stops: list[str], platform: str, platforms: dict[str, Platform], n: int = 7
+) -> tuple[list[str], int]:
+    """Names of the next n stops from `platform`, and how many come after them.
+
+    A platform off the line's longest trip (a twin platform, a variant stop) is
+    found by its station name; if the station is not on the trip, only it is shown.
+    """
+    name = platforms[platform].name
+    names = [platforms[stop].name for stop in stops]
+    if name not in names:
+        return [name], 0
+    return next_stops(names, name, n)

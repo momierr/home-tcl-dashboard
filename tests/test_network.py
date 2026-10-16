@@ -7,6 +7,7 @@ from home_tcl_dashboard.network import (
     parse_desserte,
     parse_lines,
     parse_platform,
+    timeline,
 )
 
 
@@ -140,3 +141,30 @@ def test_next_stops_near_the_terminus_has_nothing_left() -> None:
 
 def test_next_stops_at_the_terminus_is_only_itself() -> None:
     assert next_stops(STOPS, "e") == (["e"], 0)
+
+
+TIMELINE_PLATFORMS = {
+    "1": Platform(id="1", name="Gare de Vaise", line_directions={("D", "A")}),
+    "2": Platform(id="2", name="Vieux Lyon", line_directions={("D", "A")}),
+    "2bis": Platform(id="2bis", name="Vieux Lyon", line_directions={("D", "A")}),
+    "3": Platform(id="3", name="Bellecour", line_directions={("D", "A")}),
+    "9": Platform(id="9", name="Variante", line_directions={("D", "A")}),
+}
+
+
+def test_timeline_starts_at_the_platform_station() -> None:
+    assert timeline(["1", "2", "3"], "2", TIMELINE_PLATFORMS, n=2) == (
+        ["Vieux Lyon", "Bellecour"],
+        0,
+    )
+
+
+def test_timeline_finds_a_twin_platform_by_its_station_name() -> None:
+    assert timeline(["1", "2", "3"], "2bis", TIMELINE_PLATFORMS) == (
+        ["Vieux Lyon", "Bellecour"],
+        0,
+    )
+
+
+def test_timeline_shows_only_a_stop_that_is_not_on_the_trip() -> None:
+    assert timeline(["1", "2", "3"], "9", TIMELINE_PLATFORMS) == (["Variante"], 0)
