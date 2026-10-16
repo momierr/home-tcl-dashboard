@@ -96,8 +96,6 @@ Trois couches :
   réseau, avec un faux client (`tests/fakes.py`).
 - Les autres modules sont des fonctions pures, que le `Dashboard` appelle.
 
-Plus de détails dans [docs/architecture.md](docs/architecture.md).
-
 ## Crédits
 
 - Données : SYTRAL Mobilités, via [data.grandlyon.com](https://data.grandlyon.com).
