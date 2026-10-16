@@ -1,0 +1,48 @@
+name: Publish
+
+# Publishing a GitHub release (tag like 0.2.4) builds the package and sends it
+# to PyPI. No token: PyPI trusts this workflow (trusted publishing).
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the whole history and tags: hatch-vcs reads the version from the tag
+      - uses: prefix-dev/setup-pixi@v0.11.0
+        with:
+          locked: true
+          activate-environment: true
+      - run: python -m build
+      - run: twine check dist/*
+      # Refuse to publish a version that is not the release tag (e.g. 0.2.5.dev1+g...)
+      - name: Check the version matches the tag
+        run: |
+          tag="${{ github.event.release.tag_name }}"
+          version="${tag#v}"
+          ls dist
+          test -f "dist/home_tcl_dashboard-${version}.tar.gz"
+          test -f "dist/home_tcl_dashboard-${version}-py3-none-any.whl"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/home-tcl-dashboard
+    permissions:
+      id-token: write # lets PyPI check that this run is this repo's publish.yml
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
