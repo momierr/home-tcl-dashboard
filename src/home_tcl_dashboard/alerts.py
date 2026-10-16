@@ -25,3 +25,7 @@ def parse_alert(row: dict[str, Any]) -> Alert:
         title=row["titre"],
         message=row["message"],
     )
+
+
+def active_alerts(alerts: list[Alert], now: datetime) -> list[Alert]:
+    return [alert for alert in alerts if alert.start <= now <= alert.end]
